@@ -2,6 +2,8 @@
 
 ระบบขายหน้าร้าน (POS) ขนาดกะทัดรัด เปิดหน้าเว็บแล้วขายได้ทันที ไม่มีหน้าล็อกอินกั้น ใช้งานจริงที่ **https://domepos.mysmebox.com**
 
+![หน้าขายหน้าร้าน DOME Pos](docs/screenshots/01-pos-order.webp)
+
 ## Objective (วัตถุประสงค์)
 ให้ **เจ้าของร้านที่ทำงานคนเดียว (Solo Owner)** ของร้านกาแฟ คาเฟ่ เบเกอรี่ และบาร์คราฟต์เบียร์ รับออเดอร์ คิดเงิน พักบิลตามโต๊ะ ดูคิวชง สรุปยอดปิดกะ และจัดการเมนูได้ครบในหน้าจอเดียว
 - **คิดเงินแม่นยำ:** คิดเงินด้วยเลขทศนิยมแบบ fixed-point ทุกจุด ได้แก่ BigInt ฝั่งหน้าเว็บ (`frontend/src/lib/numeric.ts`) และ `*big.Rat` ฝั่ง backend (`backend/internal/money/rat.go`) ไม่ใช้ float กับเงิน
@@ -16,19 +18,33 @@
    - กดการ์ดสินค้าเพื่อเพิ่มลงตะกร้า ปรับความหวานและท็อปปิ้งได้ที่การ์ดหรือในแถวตะกร้า
    - ชำระด้วยเงินสด / PromptPay QR / โอน / บัตร / Wallet หรือกด **ขายด่วนเงินสดพอดี** ได้ใน 1 คลิก
    - ทุกบิลสะสมแต้ม Wallet อัตโนมัติ ครบ 100 บาท = 1 Point (ปัดลง)
+
+   ![เลือกวิธีชำระเงิน PromptPay ในตะกร้า](docs/screenshots/03-payment.webp)
+
+   ![ใบเสร็จย่อ คิวรับเครื่องดื่ม และสติกเกอร์แปะแก้ว](docs/screenshots/04-receipt.webp)
 2. **ผังโต๊ะ & บาร์**
    - มี 12 โต๊ะ: โซนคาเฟ่ `C1–C4`, เคาน์เตอร์บาร์ `B1–B4`, โซนสวน `G1–G4`
    - พักบิลลงโต๊ะได้ แล้วดึงกลับมาสั่งเพิ่มหรือเช็กบิลได้ในคลิกเดียว
+
+   ![ผังโต๊ะ 12 โต๊ะ โต๊ะ B1 มีบิลพักอยู่](docs/screenshots/02-tables.webp)
 3. **จอคิวบาริสต้า (KDS)**
    - แสดงคิวตามสถานะ `กำลังชง → พร้อมเสิร์ฟ → เสิร์ฟแล้ว`
    - มีปุ่มเรียกคิวด้วยเสียงพูดภาษาไทย
+
+   ![จอคิวบาริสต้า KDS](docs/screenshots/05-kds.webp)
 4. **รายงาน & ปิดกะ**
    - ยอดขายแยกตามหมวดสินค้าและช่องทางชำระเงิน
    - เปิด/ปิดกะลิ้นชักเงินสด พิมพ์ Z-Report
    - เปิดใบเสร็จย่อ 80mm และสติกเกอร์แปะแก้วซ้ำได้ ยกเลิกบิลได้
+
+   ![รายงานยอดขายและปิดกะ](docs/screenshots/06-reports.webp)
 5. **จัดการสินค้า & Cloudflare** (`DomePosManagePanel.tsx`)
    - เพิ่ม/แก้/ลบเมนู ราคา หมวด หน่วย และรูปสินค้า
    - กรอกบัญชี Cloudflare ของร้าน (D1 + R2) เพื่อซิงค์ข้อมูลแบบ Realtime SSE และ Auto Sync ทุก 30 วินาที
+
+   ![ตั้งค่าบัญชี Cloudflare D1 และ R2](docs/screenshots/07-manage-cloudflare.webp)
+
+   ![ตารางจัดการเมนู ราคา และรูปสินค้า](docs/screenshots/08-manage-products.webp)
 
 **หน้าตาและแอนิเมชัน**
 - ใช้ design system กลางใน `frontend/src/app/globals.css` (คลาส `dp-*` และตัวแปร `--dp-*`) โทน Espresso + Terracotta พื้นครีม
@@ -90,6 +106,11 @@ node runner/run.mjs --script uat-scripts/pos-data-reconcile-and-promo-audit.json
 node runner/run.mjs --script uat-scripts/pos-starter-cafe-beer-ui-e2e.json       --out runs/verify-ui   --base http://localhost:3005
 ```
 ต้องผ่านครบทั้ง 3 ชุด (17 + 8 + 34 ขั้นตอน, `failed: 0`)
+
+ถ่ายภาพหน้าจอใน README ใหม่ (ต้องรัน backend + frontend บนเครื่องก่อน; สคริปต์นี้สร้างบิลจริงลงฐาน จึงห้ามชี้ไป production):
+```powershell
+node docs/capture-screenshots.mjs http://localhost:3005
+```
 
 ### เรียก API ตรง
 ```bash
