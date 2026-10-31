@@ -1,0 +1,51 @@
+name = "domepos-edge"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 1. Cloudflare D1 (Serverless SQL Database สำหรับเก็บข้อมูลเมนู, บิลขาย, กะแคชเชียร์, บัญชีคู่ GL)
+[[d1_databases]]
+binding = "DB"
+database_name = "domepos-d1"
+database_id = "00000000-0000-0000-0000-000000000001"
+migrations_dir = "migrations"
+
+# 2. Cloudflare R2 (Object Storage ฟรีค่า Egress สำหรับเก็บรูปเมนูร้านกาแฟ, สลิปโอนเงิน, และ PDF ใบเสร็จ)
+[[r2_buckets]]
+binding = "IMAGES_BUCKET"
+bucket_name = "domepos-images"
+
+# 3. Cloudflare Workers KV (Key-Value Cache ความเร็วสูงสำหรับตั้งค่าร้าน, พร้อมเพย์ QR, เมนูขายดี)
+[[kv_namespaces]]
+binding = "CONFIG_KV"
+id = "domepos-config-kv"
+
+# 4. Cloudflare Queues (คิวประมวลผลเบื้องหลัง: ตัดสต็อก & Mint แต้มสะสมเข้า ThaiFi Wallet)
+[[queues.producers]]
+binding = "POS_QUEUE"
+queue = "domepos-bg-tasks"
+
+[[queues.consumers]]
+queue = "domepos-bg-tasks"
+max_batch_size = 10
+max_batch_timeout = 2
+
+# 5. Cloudflare Durable Objects (ซิงค์จอคิวชงบาริสต้า KDS แบบ Real-time WebSocket)
+[durable_objects]
+bindings = [
+  { name = "KDS_HUB", class_name = "KdsHubDurableObject" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["KdsHubDurableObject"]
+
+# 6. Cloudflare Workers AI (วิเคราะห์สลิปโอนเงิน OCR & สรุปยอดขายประจำวันสำหรับเจ้าของคนเดียว)
+[ai]
+binding = "AI"
+
+[vars]
+APP_NAME = "DOME Pos"
+POS_DEFAULT_ID = "POS-01"
+VAT_RATE = "7.00"
+THAIFI_DEFAULT_WALLET = "0xC57b5CC43721F93030e3C228710DC2f3F57B94eA"

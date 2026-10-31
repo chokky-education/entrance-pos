@@ -1,0 +1,231 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { HealthCheck, IssueLink, ScriptRun } from "@/types/bot";
+import type { DeployedIssue } from "./auto-retest";
+import { getSettings } from "./swarm-store";
+import { isAiScript } from "./uat-scripts";
+
+// ส่งผลทดสอบที่ไม่ผ่านเข้า IssueMate (MCP แบบ stateless: เรียก tools/call ได้เลยไม่ต้อง initialize)
+const PRIORITY = { S1: "critical", S2: "high", S3: "medium", S4: "low" } as const;
+const SENT_FILE = join(process.cwd(), "runs", "issuemate-sent.json");
+const SITE = "http://localhost:3055";
+
+async function rpc(method: string, params: object) {
+  const { ISSUEMATE_MCP_URL: url, ISSUEMATE_TOKEN: token, ISSUEMATE_PROJECT: project = "DOMEPOS" } = process.env;
+  if (!url || !token) throw new Error("ยังไม่ได้ตั้ง ISSUEMATE_MCP_URL / ISSUEMATE_TOKEN ใน .env.local");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "X-MCP-Project": project, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j) throw new Error(`IssueMate ตอบ HTTP ${res.status}`);
+  if (j.error) throw new Error(`IssueMate: ${j.error.message}`);
+  return j.result;
+}
+
+async function tool(name: string, args: object) {
+  const result = await rpc("tools/call", { name, arguments: args });
+  const text: string = result?.content?.[0]?.text ?? "";
+  if (result?.isError) throw new Error(`IssueMate: ${text.slice(0, 200)}`);
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { text };
+  }
+}
+
+const PROJECT = () => process.env.ISSUEMATE_PROJECT || "DOMEPOS";
+
+// ตอบกลับใน issue เดิม (ผลตรวจซ้ำ) — ไม่เปลี่ยนสถานะ issue ให้ฝั่งคนแก้เป็นคนเลื่อนสถานะเอง
+export const commentIssue = (code: string, message: string) =>
+  tool("converse_on_issue", { projectKey: PROJECT(), code, agentName: "UAT Tester", role: "UAT Tester", message });
+
+// ticket ที่ deploy แล้วและอ้างสคริปต์ของ Tester (auto-retest.ts คัดต่อว่า Tester เปิดเอง)
+// ponytail: เห็นแค่ 200 ใบล่าสุดตามวันเปิด (เพดานฝั่ง IssueMate 500) — ticket เก่ากว่านั้นที่เพิ่ง deploy จะหลุด ถ้าเจอจริงค่อยไล่ทีละ code จาก issuemate-sent.json ด้วย get_issue
+export async function listDeployed(): Promise<DeployedIssue[]> {
+  const r = await tool("list_issues", { projectKey: PROJECT(), status: "deployed", search: "uat-scripts/", limit: 200 });
+  if (!Array.isArray(r)) throw new Error(`IssueMate list_issues ตอบไม่ใช่รายการ: ${JSON.stringify(r).slice(0, 200)}`);
+  return r;
+}
+
+export async function checkIssueMate(): Promise<HealthCheck> {
+  const url = process.env.ISSUEMATE_MCP_URL ? new URL(process.env.ISSUEMATE_MCP_URL).origin : undefined;
+  try {
+    const n = ((await rpc("tools/list", {}))?.tools ?? []).length;
+    return { ok: n > 0, message: `IssueMate พร้อม (${process.env.ISSUEMATE_PROJECT || "DOMEPOS"} · ${n} เครื่องมือ)`, url };
+  } catch (e) {
+    return { ok: false, message: (e as Error).message, url };
+  }
+}
+
+// ponytail: กันส่งซ้ำด้วยไฟล์ในเครื่อง (สคริปต์+ขั้นที่พัง) — สคริปต์ผ่านเมื่อไรรายการของมันถูกลบเอง (clearSent)
+const readSent = (): Record<string, string> => (existsSync(SENT_FILE) ? JSON.parse(readFileSync(SENT_FILE, "utf8")) : {});
+
+// สคริปต์ที่เคยเปิด issue นี้ (ใช้สั่งตรวจซ้ำด้วยเลข issue)
+export const scriptsForIssue = (code: string) => [...new Set(Object.entries(readSent()).filter(([, c]) => c === code).map(([k]) => k.split("#")[0]))];
+
+// สคริปต์ผ่านแล้ว → ปลดตัวกันส่งซ้ำของสคริปต์นั้น คืนเลข issue ที่เคยเปิดไว้
+export function clearSent(scriptId: string): string[] {
+  const sent = readSent();
+  const keys = Object.keys(sent).filter((k) => k.startsWith(`${scriptId}#`));
+  if (!keys.length) return [];
+  const codes = [...new Set(keys.map((k) => sent[k]))];
+  for (const k of keys) delete sent[k];
+  writeFileSync(SENT_FILE, JSON.stringify(sent, null, 1));
+  return codes;
+}
+
+const inFlightByScript = new Map<string, Promise<IssueLink>>();
+
+export async function reportRun(run: ScriptRun, outDir: string): Promise<IssueLink> {
+  const existingFlight = inFlightByScript.get(run.scriptId);
+  if (existingFlight) {
+    const prev = await existingFlight.catch(() => null);
+    if (prev?.code) {
+      return { status: "duplicate", code: prev.code, message: `สคริปต์เดียวกับ ${prev.code}`, at: new Date().toISOString() };
+    }
+  }
+  const p = reportRunInner(run, outDir);
+  inFlightByScript.set(run.scriptId, p);
+  try {
+    return await p;
+  } finally {
+    inFlightByScript.delete(run.scriptId);
+  }
+}
+
+async function reportRunInner(run: ScriptRun, outDir: string): Promise<IssueLink> {
+  const at = () => new Date().toISOString();
+  const failed = run.steps.filter((s) => s.status === "failed");
+  const first = failed[0];
+  const key = `${run.scriptId}#${first ? `${first.i}:${first.title}` : run.status}`;
+  const sent = readSent();
+  if (sent[key]) return { status: "duplicate", code: sent[key], message: `ปัญหาเดียวกับ ${sent[key]} ที่ส่งไปแล้ว`, at: at() };
+
+  const line = (s: ScriptRun["steps"][number]) =>
+    `- ขั้น ${s.i + 1} ${s.title} [${s.kind}]${s.detail ? ` — ${s.detail}` : ""}${s.expected !== undefined ? `\n  - คาดหวัง: \`${s.expected}\`` : ""}${s.actual !== undefined ? `\n  - ค่าจริง: \`${s.actual}\`` : ""}${s.query ? `\n  - คำสั่งที่รัน: \`${s.query}\`` : ""}`;
+  // สคริปต์เดียว = issue เดียว: ขั้นแรกที่พังเปลี่ยนไปในรอบใหม่ (เช่น smoke ที่ตรวจหลายเมนู) → ต่อท้ายผลใน issue เดิมแทนการเปิดใหม่ จนกว่าสคริปต์จะผ่าน (clearSent)
+  // วิดีโอ/trace ที่ตัวรันเก็บไว้ (เฉพาะรอบไม่ผ่าน) — ลิงก์ไปหน้าหลักฐานของ Tester แทนการแนบไฟล์ใหญ่
+  const ev = (f: string) => `${SITE}/api/runs/${run.id}/evidence/${f}`;
+  const rec = existsSync(join(outDir, "video.webm")) ? [`วิดีโอรอบนี้: ${ev("video.webm")}${existsSync(join(outDir, "trace.zip")) ? ` · Playwright trace (ผู้ดูแลเท่านั้น): ${ev("trace.zip")}` : ""}`] : [];
+  const open = Object.entries(sent).find(([k]) => k.startsWith(`${run.scriptId}#`))?.[1];
+  if (open) {
+    // รอบตรวจซ้ำของ issue นี้ → sendToIssueMate แจ้งผลใน issue เองแล้ว ไม่ต้องซ้ำ
+    if (run.retestOf !== open) await commentIssue(open, [`รอบ \`${run.id}\` ยังไม่ผ่าน (ผ่าน ${run.passed} ไม่ผ่าน ${run.failed} ข้าม ${run.skipped})`, ...failed.map(line), ...rec.map((l) => `\n${l}`)].join("\n").slice(0, 20_000));
+    writeFileSync(SENT_FILE, JSON.stringify({ ...sent, [key]: open }, null, 1));
+    return { status: "duplicate", code: open, message: `สคริปต์เดิมยังไม่ผ่าน — ต่อท้ายผลรอบนี้ใน ${open}`, at: at() };
+  }
+
+  const shot = failed.find((s) => s.evidence?.endsWith(".png"))?.evidence;
+  const png = shot && existsSync(join(outDir, shot)) ? readFileSync(join(outDir, shot)).toString("base64") : undefined;
+  const facts = [
+    `สคริปต์: uat-scripts/${run.scriptId}.json — ${run.scriptTitle}`,
+    ...(run.ai || isAiScript(run.scriptId) ? ["(สคริปต์นี้ AI เขียนเอง — ตรวจก่อนว่า SQL/ค่าคาดหวังในสคริปต์ถูกต้อง แล้วค่อยแก้ระบบ)"] : []),
+    `เว็บที่ทดสอบ: ${run.target} · โมดูล ${run.module} · มุมตรวจ ${run.lens}`,
+    `ผล: ${run.status} ผ่าน ${run.passed} ไม่ผ่าน ${run.failed} ข้าม ${run.skipped}${run.message ? ` · ${run.message}` : ""}`,
+    `ตัวตรวจจับเจอ HTTP>=400 / JS error / DB error ${run.issues} ครั้ง`,
+    "",
+    "ขั้นที่ไม่ผ่าน:",
+    ...(failed.length ? failed.map(line) : ["- (ไม่มีขั้นที่ไม่ผ่าน — รันผิดพลาดก่อนจบ)"]),
+  ].join("\n");
+
+  const analysis = [
+    `1. ไม่ผ่านเพราะ: ${first ? `ขั้น ${first.i + 1} (${first.title}) [${first.kind}] — ${first.detail ?? "ไม่ผ่านเกณฑ์ที่กำหนด"}` : (run.message ?? run.status)}`,
+    `2. ค่าคาดหวัง / ค่าจริง: คาดหวัง \`${first?.expected ?? "-"}\` · ค่าจริง \`${first?.actual ?? "-"}\``,
+    `3. คำสั่ง/จุดที่รัน: \`${first?.query ?? run.target}\` (โมดูล \`${run.module}\` · มุมตรวจ \`${run.lens}\`)`,
+    `4. แนวทางแก้ไข: ตรวจสอบโค้ดหน้าจอ/API/ฐานข้อมูลที่เกี่ยวข้องกับสคริปต์ \`uat-scripts/${run.scriptId}.json\` แก้ไขต้นเหตุแล้วสั่งรันตรวจซ้ำผ่าน UAT Tester`,
+  ].join("\n");
+
+  const repro = run.steps
+    .filter((s) => !s.cleanup && (!first || s.i <= first.i))
+    .map((s) => `${s.i + 1}. ${s.title}${s.status === "failed" ? " ← ไม่ผ่าน" : ""}`)
+    .join("\n");
+  const description = [
+    `**ผลทดสอบ UAT อัตโนมัติไม่ผ่าน** · รอบ \`${run.id}\` · ${run.finishedAt ?? at()}`,
+    "",
+    `**ไม่ผ่านเพราะ:** ${first ? `ขั้น ${first.i + 1} ${first.title}${first.detail ? ` — ${first.detail}` : ""}${first.expected !== undefined ? ` (คาดหวัง \`${first.expected}\` ได้ \`${first.actual ?? ""}\`)` : ""}` : (run.message ?? run.status)}`,
+    "",
+    facts,
+    "",
+    "### ขั้นตอนทำซ้ำ",
+    repro || "-",
+    "",
+    "### วิเคราะห์สาเหตุและแนวทางแก้ไข (UAT Tester)",
+    analysis,
+    "",
+    ...rec.flatMap((l) => [l, ""]),
+    `ทำซ้ำด้วยตัวรัน: \`node runner/run.mjs --script uat-scripts/${run.scriptId}.json --out runs/<id> --base ${run.target}\``,
+  ].join("\n");
+
+  const res = await tool("create_issue", {
+    projectKey: PROJECT(),
+    title: `[UAT ${run.severityOnFail}] ${run.scriptTitle}${first ? ` — ขั้น ${first.i + 1} ${first.title}` : ""}`.slice(0, 200),
+    description,
+    type: "bug",
+    priority: PRIORITY[run.severityOnFail],
+    reporter: "UAT Tester Swarm",
+    labels: ["uat", run.module, run.lens, run.severityOnFail],
+    devopsMeta: { environment: "uat", targetServerOrDomain: new URL(run.target).host, incidentSeverity: run.severityOnFail },
+    aiSummary: analysis.slice(0, 2000),
+    files: [
+      ...(png && shot ? [{ filename: shot, base64: png, mimeType: "image/png" }] : []),
+      { filename: `uat-run-${run.id}.json`, contentText: JSON.stringify(run, null, 1).slice(0, 100_000), mimeType: "application/json" },
+    ],
+  });
+  const code: string | undefined = res?.issue?.code;
+  if (res?.status !== "created" || !code) throw new Error(`IssueMate ไม่ได้สร้าง issue (${res?.status ?? "ไม่ทราบสถานะ"})`);
+  writeFileSync(SENT_FILE, JSON.stringify({ ...readSent(), [key]: code }, null, 1));
+  return { status: "sent", code, analysis, at: at() };
+}
+
+// ---------- ขอเครื่องมือ MCP เพิ่มจาก SML AI Account (sml-mcp.ts smlContext เรียกเมื่อ AI บอกว่าข้อมูลที่ต้องใช้ไม่มีเครื่องมือไหนให้) ----------
+// ขอโครงสร้าง/workflow ของระบบใหม่ ไม่ใช่โค้ดเดิม · กันซ้ำด้วยไฟล์แยกจาก SENT_FILE (คีย์ไม่มี # ของ scriptsForIssue) และไม่เขียน "uat-scripts/" ใน ticket (listDeployed ค้นคำนี้)
+// ponytail: เพดาน 3 ใบต่อวัน กัน AI ตั้งชื่อต่างกันเรื่องเดียวกันจน ticket ท่วม — ถ้าไม่พอค่อยให้ AI เห็นรายชื่อที่ขอไปแล้ว
+const MCP_FILE = join(process.cwd(), "runs", "mcp-requests.json");
+const asking = new Set<string>();
+type McpNeed = { name?: unknown; why?: unknown; input?: unknown; output?: unknown };
+
+export async function requestMcp(need: McpNeed | undefined, task: string, existing: string[]): Promise<string> {
+  const name = String(need?.name ?? "");
+  const [why, input, output] = [need?.why, need?.input, need?.output].map((v) => String(v ?? "").trim());
+  if (!/^sml_[a-z0-9_]{3,50}$/.test(name) || existing.includes(name) || [why, input, output].some((v) => v.length < 10)) return "";
+  const done: Record<string, { code: string; at: string }> = existsSync(MCP_FILE) ? JSON.parse(readFileSync(MCP_FILE, "utf8")) : {};
+  const wait = (code: string) => `ยังไม่มีเครื่องมือ ${name} (ขอ SML AI Account สร้างแล้ว ${code}) — ข้อมูลส่วนนี้ห้ามเดา ให้บอกว่าไม่แน่ใจ`;
+  if (done[name]) return wait(done[name].code);
+  const today = new Date().toISOString().slice(0, 10);
+  if (!getSettings().autoIssueMate || asking.has(name) || Object.values(done).filter((r) => r.at.startsWith(today)).length >= 3) return "";
+  asking.add(name);
+  try {
+    const res = await tool("create_issue", {
+      projectKey: PROJECT(),
+      title: `[UAT ขอ MCP] ${name} — ${why}`.slice(0, 200),
+      description: [
+        "**UAT Tester ขอเครื่องมือ MCP เพิ่มใน sml-ai-account-mcp (อ่านอย่างเดียว)** เพื่อตรวจตามโครงสร้าง/workflow ของ SML AI Account เอง ไม่ต้องเดา",
+        "",
+        `- ชื่อเครื่องมือ: \`${name}\``,
+        `- ใช้ทำอะไร: ${why}`,
+        `- input: ${input}`,
+        `- output ที่ต้องการ: ${output}`,
+        "",
+        `งานของ Tester ที่ต้องใช้: ${task.slice(0, 1500)}`,
+        `เครื่องมือที่มีแล้ว: ${existing.join(", ")}`,
+        "",
+        "ข้อตกลง: อ่านอย่างเดียว ใช้ token smlmcp_ro_ เดิมได้ · ถ้า workflow ต่อยอดจากโค้ด C#/Java เดิม ระบุว่ามาจากส่วนไหนและปรับอะไร · เพิ่มแล้ว Tester เห็นเองจาก tools/list ภายใน 10 นาทีและใช้ทันที",
+      ].join("\n"),
+      type: "feature",
+      priority: "medium",
+      reporter: "UAT Tester Swarm",
+      labels: ["uat", "mcp-request"],
+    });
+    const code: string | undefined = res?.issue?.code;
+    if (res?.status !== "created" || !code) return "";
+    writeFileSync(MCP_FILE, JSON.stringify({ ...done, [name]: { code, at: new Date().toISOString() } }, null, 1));
+    return wait(code);
+  } catch {
+    return "";
+  } finally {
+    asking.delete(name);
+  }
+}

@@ -1,0 +1,188 @@
+{
+  "id": "pos-starter-cafe-beer-ui-e2e",
+  "title": "DOME Pos (ร้านกาแฟ · เบียร์ · คาเฟ่ย์) E2E บนหน้าจอจริง: โหมดเจ้าของคนเดียว → สั่งออเดอร์ → พักบิลผังโต๊ะ B1 → เรียกบิลรับชำระ QR → ใบเสร็จ & สติกเกอร์แก้ว → จอคิวบาริสต้า KDS → รายงานยอดขาย & ปิดกะ",
+  "module": "pos",
+  "lens": "screen",
+  "severityOnFail": "S1",
+  "description": "ทดสอบ Workflow ครบวงจรของ DOME Pos (โหมดเจ้าของคนเดียว ทำงานคนเดียว) บนหน้าจอจริง: เปิดเข้าหน้าเว็บ / ทันทีไม่ต้องล็อกอิน เลือกทานที่ร้าน โต๊ะ B1 เลือกระดับความหวาน 50% + เพิ่มช็อตเอสเปรสโซ่ สั่งกาแฟสด คราฟต์เบียร์ และครัวซองต์ พักบิลลงโต๊ะ B1 เปิดผังโต๊ะดึงบิลกลับมาคิดเงินผ่าน PromptPay QR ตรวจใบเสร็จย่อและสติกเกอร์แปะแก้ว ตรวจจอคิวบาริสต้า KDS และตรวจรายงานยอดขาย & ปิดกะ",
+  "steps": [
+    {
+      "title": "เปิดเข้าหน้าเว็บ DOME Pos (/) โหมดเจ้าของคนเดียวพร้อมขายทันที",
+      "do": "ui.demoLogin"
+    },
+    {
+      "title": "ตรวจหน้าจอ DOME Pos ร้านกาแฟ เบียร์ คาเฟ่ย์ แสดงผลครบถ้วน",
+      "do": "ui.expectVisible",
+      "selector": "[data-testid=\"pos-starter-cafe-screen\"]"
+    },
+    {
+      "title": "กดปุ่มล้างตะกร้าตัวอย่างเพื่อเริ่มสั่งออเดอร์ใหม่",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-clear-cart-btn\"]"
+    },
+    {
+      "title": "เลือกรูปแบบบริการ ทานที่ร้าน (Dine-In)",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-channel-DINE_IN\"]"
+    },
+    {
+      "title": "เลือกโต๊ะบาร์คราฟต์เบียร์ B1",
+      "do": "ui.select",
+      "selector": "[data-testid=\"pos-starter-table-select\"]",
+      "value": "B1"
+    },
+    {
+      "title": "กรองหมวดหมู่ กาแฟสด (Specialty Coffee)",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-cat-coffee\"]"
+    },
+    {
+      "title": "เลือกระดับความหวาน หวาน 50%",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-sweet-หวาน 50%\"]"
+    },
+    {
+      "title": "เลือกตัวเลือกเสริม +1 ช็อตเอสเปรสโซ่เข้ม (+20฿)",
+      "do": "ui.select",
+      "selector": "[data-testid=\"pos-starter-addon-select\"]",
+      "value": "EXTRA_SHOT"
+    },
+    {
+      "title": "คลิกสั่ง อเมริกาโน่เย็น คั่วกลาง (CAFE-ESP-01: 75 + 20 = 95.00 บาท)",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-item-CAFE-ESP-01\"]"
+    },
+    {
+      "title": "สลับตัวเลือกเสริมกลับเป็น มาตรฐาน (ไม่เพิ่มท็อปปิ้ง)",
+      "do": "ui.select",
+      "selector": "[data-testid=\"pos-starter-addon-select\"]",
+      "value": "NONE"
+    },
+    {
+      "title": "กรองหมวดหมู่ คราฟต์เบียร์ & แท็ป (Craft Beer)",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-cat-beer\"]"
+    },
+    {
+      "title": "คลิกสั่ง คราฟต์เบียร์ Hazy IPA สด (Pint 473ml) (BEER-IPA-01: 220.00 บาท)",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-item-BEER-IPA-01\"]"
+    },
+    {
+      "title": "กรองหมวดหมู่ เบเกอรี่ & เค้ก",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-cat-bakery\"]"
+    },
+    {
+      "title": "คลิกสั่ง ครัวซองต์เนยสดฝรั่งเศส AOP (CAFE-BAK-01: 85.00 บาท)",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-item-CAFE-BAK-01\"]"
+    },
+    {
+      "title": "ตรวจยอดสุทธิรวมในตะกร้า (95 + 220 + 85 = 400.00 บาท)",
+      "do": "ui.expectText",
+      "selector": "[data-testid=\"pos-starter-net-total\"]",
+      "text": "400.00"
+    },
+    {
+      "title": "กดปุ่ม พักบิลลงโต๊ะ B1",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-hold-btn\"]"
+    },
+    {
+      "title": "เปิดแท็บ 2. ผังโต๊ะ & แท็บบาร์",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-tab-tables\"]"
+    },
+    {
+      "title": "ตรวจการ์ดโต๊ะ B1 แสดงสถานะเปิดโต๊ะ และมียอดค้างชำระ 400.00 บาท",
+      "do": "ui.expectText",
+      "selector": "[data-testid=\"pos-starter-table-card-B1\"]",
+      "text": "400.00"
+    },
+    {
+      "title": "กดดึงบิลโต๊ะ B1 กลับมาหน้าแคชเชียร์เพื่อชำระเงิน",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-recall-B1\"]"
+    },
+    {
+      "title": "ตรวจการ์ดสะสมแต้มด้วย ThaiFi Custody Wallet แสดงการคำนวณแต้มสะสมอัตโนมัติ (ยอด 400.00 บาท = +4 Point เข้า Wallet ลูกค้าทันที)",
+      "do": "ui.expectText",
+      "selector": "[data-testid=\"pos-starter-wallet-auto-point-badge\"]",
+      "text": "+4 Point"
+    },
+    {
+      "title": "ตรวจปุ่ม จ่ายด้วย Wallet พร้อมใช้งาน",
+      "do": "ui.expectVisible",
+      "selector": "[data-testid=\"pos-starter-paymethod-wallet\"]"
+    },
+    {
+      "title": "เลือกช่องทางรับชำระเงิน สแกน QR PromptPay (รับเงินปกติแล้วสะสมแต้มเข้า Wallet ลูกค้าอัตโนมัติ)",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-paymethod-promptpay\"]"
+    },
+    {
+      "title": "กดปุ่ม รับชำระเงิน & พิมพ์ใบเสร็จ (ลงบัญชี + สะสมแต้ม Mint +4 Point เข้า Wallet ลูกค้าทันที)",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-confirm-pay-btn\"]"
+    },
+    {
+      "title": "ตรวจหน้าต่างใบเสร็จรับเงินอย่างย่อ & สติกเกอร์แปะแก้ว แสดงผลสำเร็จ",
+      "do": "ui.expectVisible",
+      "selector": "[data-testid=\"pos-starter-receipt-modal\"]"
+    },
+    {
+      "title": "ตรวจข้อความในใบเสร็จมียอดสุทธิ 400.00 บาท",
+      "do": "ui.expectText",
+      "selector": "[data-testid=\"pos-starter-receipt-modal\"]",
+      "text": "400.00"
+    },
+    {
+      "title": "ตรวจกล่อง ThaiFi Custody Wallet ในใบเสร็จแสดงแต้มสะสมที่ Mint เข้า Wallet ลูกค้า (+4 Point)",
+      "do": "ui.expectText",
+      "selector": "[data-testid=\"pos-starter-receipt-points-minted\"]",
+      "text": "+4 Point"
+    },
+    {
+      "title": "ปิดหน้าต่างใบเสร็จรับเงิน",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-close-receipt-btn\"]"
+    },
+    {
+      "title": "เปิดแท็บ 3. จอคิวบาริสต้า & บาร์น้ำ (KDS)",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-tab-kds\"]"
+    },
+    {
+      "title": "ตรวจจอคิวบาริสต้าแสดงผล",
+      "do": "ui.expectVisible",
+      "selector": "[data-testid=\"pos-starter-kds-view\"]"
+    },
+    {
+      "title": "เปิดแท็บ 4. รายงานยอดขาย & ปิดกะ",
+      "do": "ui.click",
+      "selector": "[data-testid=\"pos-starter-tab-reports\"]"
+    },
+    {
+      "title": "ตรวจการ์ด KPI ยอดขายสุทธิรวมในกะ",
+      "do": "ui.expectVisible",
+      "selector": "[data-testid=\"pos-starter-kpi-total-sales\"]"
+    },
+    {
+      "title": "ตรวจตารางทะเบียนบิลขาย POS แสดงรายการบิลที่เพิ่งชำระ",
+      "do": "ui.expectVisible",
+      "selector": "[data-testid=\"pos-starter-bills-table\"]"
+    },
+    {
+      "title": "ตรวจความสะอาด Console / HTTP / DB Error",
+      "do": "ui.expectClean"
+    }
+  ],
+  "cleanup": [
+    {
+      "title": "ล้างข้อมูลบิลทดสอบ POS-CAFE-* ในฐานข้อมูล domepos",
+      "do": "db.exec",
+      "sql": "DELETE FROM ic_trans_detail WHERE doc_no LIKE 'POS-CAFE-%' AND trans_flag = 44; DELETE FROM ic_trans WHERE doc_no LIKE 'POS-CAFE-%' AND trans_flag = 44; DELETE FROM cb_trans_detail WHERE doc_no LIKE 'POS-CAFE-%'; DELETE FROM cb_trans WHERE doc_no LIKE 'POS-CAFE-%'; DELETE FROM gl_journal_detail WHERE doc_no LIKE 'POS-CAFE-%'; DELETE FROM gl_journal WHERE doc_no LIKE 'POS-CAFE-%'; DELETE FROM pos_bill_inbox WHERE doc_no LIKE 'POS-CAFE-%';"
+    }
+  ]
+}

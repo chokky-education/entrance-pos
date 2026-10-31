@@ -1,0 +1,31 @@
+import React from "react";
+import {
+  BarChart3,
+  Bot,
+  Database,
+  GitCompare,
+  Globe,
+  Monitor,
+  Package,
+  Receipt,
+  Scale,
+  Settings,
+  Landmark,
+  ShieldCheck,
+  ShoppingCart,
+  Store,
+  Truck,
+  Workflow,
+  type LucideIcon,
+} from "lucide-react";
+
+// ชื่อไอคอนใน swarm-data.ts (avatarIcon) และไอคอนของมุมตรวจ
+const ICONS: Record<string, LucideIcon> = {
+  Database, ShoppingCart, Store, Truck, Package, Scale, Receipt, BarChart3, ShieldCheck, Settings, GitCompare, Landmark,
+  screen: Monitor, data: Database, api: Globe, e2e: Workflow,
+};
+
+export const BotIcon: React.FC<{ name: string; className?: string }> = ({ name, className = "w-5 h-5" }) => {
+  const Icon = ICONS[name] ?? Bot;
+  return <Icon className={className} />;
+};

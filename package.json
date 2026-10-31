@@ -1,0 +1,16 @@
+{
+  "name": "domepos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DOME Pos — ระบบขายหน้าร้านกาแฟ เบียร์ คาเฟ่ย์ (โหมดเจ้าของคนเดียว ทำงานคนเดียว พร้อมระบบ UAT แยกอิสระ)",
+  "scripts": {
+    "dev:backend": "cd backend && go run ./cmd/api",
+    "dev:frontend": "pnpm --dir frontend dev",
+    "dev:uat": "pnpm --dir uat dev",
+    "build:backend": "cd backend && go build -o domepos-api.exe ./cmd/api",
+    "build:frontend": "pnpm --dir frontend build",
+    "build:uat": "pnpm --dir uat build",
+    "test:backend": "cd backend && go test ./...",
+    "test:uat": "node uat/runner/selfcheck.mjs"
+  }
+}

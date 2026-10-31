@@ -1,0 +1,25 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "domepos-backend"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+SERVICE_NAME = "domepos-api"
+DB_PROVIDER = "d1"
+STORAGE_PROVIDER = "r2"
+R2_BUCKET_NAME = "domepos-media"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "domepos"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "."
+
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "domepos-media"
+preview_bucket_name = "domepos-media-preview"
+
+[images]
+binding = "IMAGES"

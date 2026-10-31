@@ -1,0 +1,249 @@
+{
+  "id": "pos-e2e-api-db-gl-report",
+  "title": "E2E DOME Pos ขายหน้าร้านครบวงจร (API Bootstrap/Bills/Shift/Restore/Sync → PostgreSQL domepos → สต็อก IC → เงินสด/QR CB → บัญชีคู่ GL Dr=Cr=370.00 → ยกเลิกบิล)",
+  "module": "pos",
+  "lens": "api",
+  "severityOnFail": "S1",
+  "description": "ทดสอบ API ของ DOME Pos (/api/pos/bootstrap, /api/pos/bills, /api/pos/shift, /api/pos/restore, /api/pos/sync) คู่กับฐานข้อมูล domepos: ออกบิลขายสด (กาแฟสด + คราฟต์เบียร์ VAT 7% รวมใน รับชำระเงินสด + QR PromptPay = 370.00 บาท) ตรวจตาราง pos_bill_inbox, ic_trans (trans_flag=44), ic_trans_detail, cb_trans, gl_journal_detail (Dr=Cr=370.00) ทดสอบซิงค์และกู้คืนข้อมูล แล้วทดสอบยกเลิกบิลผ่าน /api/pos/shift",
+  "steps": [
+    {
+      "title": "กำหนดเลขที่บิล DOME Pos ทดสอบ",
+      "do": "set",
+      "name": "posdoc",
+      "value": "UAT-POS-{{run.short}}"
+    },
+    {
+      "title": "ดึงวันที่ปัจจุบันและสร้าง UUID สำหรับ bill_guid ในฐานข้อมูล domepos",
+      "do": "db.query",
+      "sql": "SELECT to_char((now() at time zone 'Asia/Bangkok')::date, 'YYYY-MM-DD') AS today, md5(:'posdoc')::uuid::text AS billguid, md5(:'posdoc' || '-SYNC')::uuid::text AS syncguid",
+      "rows": 1,
+      "save": {
+        "today": "today",
+        "billguid": "billguid",
+        "syncguid": "syncguid"
+      }
+    },
+    {
+      "title": "เปิดเข้าหน้าเว็บ DOME Pos (/) โหมดเจ้าของคนเดียว",
+      "do": "ui.demoLogin"
+    },
+    {
+      "title": "เรียก GET /api/pos/bootstrap?pos_id=POS-01 ตรวจความพร้อมของเครื่อง POS",
+      "do": "api.request",
+      "method": "GET",
+      "path": "/api/pos/bootstrap?pos_id=POS-01",
+      "expectStatus": 200
+    },
+    {
+      "title": "เรียก GET /api/process/wallet/status?partyCode=0xC57b5CC43721F93030e3C228710DC2f3F57B94eA ตรวจกระเป๋าเงิน ThaiFi Custody Wallet (Chain 17)",
+      "do": "api.request",
+      "method": "GET",
+      "path": "/api/process/wallet/status?partyCode=0xC57b5CC43721F93030e3C228710DC2f3F57B94eA",
+      "expectStatus": 200,
+      "expect": [
+        { "path": "data.chainId", "op": "eq", "value": 17 }
+      ]
+    },
+    {
+      "title": "ทดสอบรับเงินทั่วไป 300 บาท (POST /api/process/wallet/mint-points) → ซื้อครบทุก 100 บาท Mint 3 Point เข้า Wallet ทันที",
+      "do": "api.request",
+      "method": "POST",
+      "path": "/api/process/wallet/mint-points",
+      "body": {
+        "partyCode": "0xC57b5CC43721F93030e3C228710DC2f3F57B94eA",
+        "docNo": "{{posdoc}}-MINT300",
+        "totalAmount": "300"
+      },
+      "expectStatus": 200,
+      "expect": [
+        { "path": "data.mode", "op": "eq", "value": "MINT_POINTS" },
+        { "path": "data.pointsMinted", "op": "eq", "value": "3" }
+      ]
+    },
+    {
+      "title": "บันทึกบิลขาย DOME Pos ผ่าน POST /api/pos/bills (อเมริกาโน่เย็น 2 แก้ว 150.00 + คราฟต์เบียร์ Hazy IPA 1 แก้ว 220.00 = 370.00 บาท รวม VAT 7%)",
+      "do": "api.request",
+      "method": "POST",
+      "path": "/api/pos/bills",
+      "body": {
+        "bill_guid": "{{billguid}}",
+        "doc_no": "{{posdoc}}",
+        "doc_date": "{{today}}",
+        "doc_time": "14:30",
+        "cashier_code": "BARISTA-01",
+        "cust_code": "CASH",
+        "bill_discount": "0.00",
+        "remark": "[DOME Pos E2E] {{run.tag}}",
+        "lines": [
+          {
+            "item_code": "CAFE-ESP-01",
+            "barcode": "8859001001011",
+            "name": "อเมริกาโน่เย็น คั่วกลาง [หวาน 50%]",
+            "unit_code": "แก้ว",
+            "qty": "2",
+            "price": "75.00",
+            "discount": "0.00"
+          },
+          {
+            "item_code": "BEER-IPA-01",
+            "barcode": "8859001003015",
+            "name": "คราฟต์เบียร์ Hazy IPA สด (Pint 473ml)",
+            "unit_code": "แก้ว",
+            "qty": "1",
+            "price": "220.00",
+            "discount": "0.00"
+          }
+        ],
+        "payments": [
+          {
+            "method": "CASH",
+            "amount": "170.00"
+          },
+          {
+            "method": "PROMPTPAY",
+            "amount": "200.00"
+          }
+        ]
+      },
+      "expectStatus": 200,
+      "expect": [
+        { "path": "data.doc_no", "op": "eq", "value": "{{posdoc}}" },
+        { "path": "data.status", "op": "eq", "value": "done" }
+      ]
+    },
+    {
+      "title": "ตรวจตาราง pos_bill_inbox ในฐานข้อมูล domepos: บันทึกสำเร็จ (status = 1)",
+      "do": "db.query",
+      "sql": "SELECT doc_no, status_code AS status FROM pos_bill_inbox WHERE doc_no = :'posdoc'",
+      "rows": 1,
+      "expect": [
+        { "col": "doc_no", "op": "eq", "value": "{{posdoc}}" },
+        { "col": "status", "op": "eq", "value": "1" }
+      ]
+    },
+    {
+      "title": "ตรวจหัวเอกสารขายสด ic_trans (trans_flag = 44): รวมสุทธิ 370.00 บาท",
+      "do": "db.query",
+      "sql": "SELECT total_amount, last_status, is_pos FROM ic_trans WHERE doc_no = :'posdoc' AND trans_flag = 44",
+      "rows": 1,
+      "expect": [
+        { "col": "total_amount", "op": "eq", "value": "370.00" },
+        { "col": "last_status", "op": "eq", "value": "0" },
+        { "col": "is_pos", "op": "eq", "value": "1" }
+      ]
+    },
+    {
+      "title": "ตรวจรายการตัดสต็อก ic_trans_detail: 2 รายการ ยอดรวม 370.00 บาท",
+      "do": "db.query",
+      "sql": "SELECT COUNT(*)::int AS cnt, COALESCE(SUM(sum_amount), 0)::numeric(18,2) AS sum_amt FROM ic_trans_detail WHERE doc_no = :'posdoc' AND trans_flag = 44",
+      "rows": 1,
+      "expect": [
+        { "col": "cnt", "op": "eq", "value": "2" },
+        { "col": "sum_amt", "op": "eq", "value": "370.00" }
+      ]
+    },
+    {
+      "title": "ตรวจตารางรับเงิน cb_trans: เงินสด 170.00 + PromptPay QR 200.00 = 370.00 บาท",
+      "do": "db.query",
+      "sql": "SELECT total_amount, cash_amount, wallet_amount FROM cb_trans WHERE doc_no = :'posdoc'",
+      "rows": 1,
+      "expect": [
+        { "col": "total_amount", "op": "eq", "value": "370.00" },
+        { "col": "cash_amount", "op": "eq", "value": "170.00" },
+        { "col": "wallet_amount", "op": "eq", "value": "200.00" }
+      ]
+    },
+    {
+      "title": "ตรวจสมุดรายวันทั่วไป gl_journal_detail: เดบิต = เครดิต = 370.00 บาท ดุลเป๊ะ (diff = 0.00)",
+      "do": "db.query",
+      "sql": "SELECT COUNT(*)::int AS n, (COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0))::numeric(18,2) AS diff, COALESCE(SUM(debit), 0)::numeric(18,2) AS debit, COALESCE(SUM(credit), 0)::numeric(18,2) AS credit FROM gl_journal_detail WHERE doc_no = :'posdoc'",
+      "rows": 1,
+      "expect": [
+        { "col": "n", "op": "gt", "value": "0" },
+        { "col": "diff", "op": "eq", "value": "0.00" },
+        { "col": "debit", "op": "eq", "value": "370.00" },
+        { "col": "credit", "op": "eq", "value": "370.00" }
+      ]
+    },
+    {
+      "title": "เรียก GET /api/pos/restore?pos_id=POS-01 ตรวจการกู้คืนสถานะบิลและผังโต๊ะ",
+      "do": "api.request",
+      "method": "GET",
+      "path": "/api/pos/restore?pos_id=POS-01",
+      "expectStatus": 200
+    },
+    {
+      "title": "เรียก POST /api/pos/sync ทดสอบซิงค์บิลออฟไลน์เข้าสู่เซิร์ฟเวอร์ (Idempotent)",
+      "do": "api.request",
+      "method": "POST",
+      "path": "/api/pos/sync",
+      "body": {
+        "pos_id": "POS-01",
+        "bills": [
+          {
+            "bill_guid": "{{billguid}}",
+            "doc_no": "{{posdoc}}",
+            "doc_date": "{{today}}",
+            "doc_time": "14:30",
+            "cashier_code": "BARISTA-01",
+            "cust_code": "CASH",
+            "lines": [
+              {
+                "item_code": "CAFE-ESP-01",
+                "name": "อเมริกาโน่เย็น คั่วกลาง [หวาน 50%]",
+                "unit_code": "แก้ว",
+                "qty": "2",
+                "price": "75.00"
+              },
+              {
+                "item_code": "BEER-IPA-01",
+                "name": "คราฟต์เบียร์ Hazy IPA สด (Pint 473ml)",
+                "unit_code": "แก้ว",
+                "qty": "1",
+                "price": "220.00"
+              }
+            ],
+            "payments": [
+              { "method": "CASH", "amount": "170.00" },
+              { "method": "PROMPTPAY", "amount": "200.00" }
+            ]
+          }
+        ]
+      },
+      "expectStatus": 200
+    },
+    {
+      "title": "ทดสอบยกเลิกบิล POS ผ่าน POST /api/pos/shift (action: cancel_bill)",
+      "do": "api.request",
+      "method": "POST",
+      "path": "/api/pos/shift",
+      "body": {
+        "pos_id": "POS-01",
+        "action": "cancel_bill",
+        "doc_no": "{{posdoc}}",
+        "reason": "ทดสอบยกเลิกบิล DOME Pos E2E"
+      },
+      "expectStatus": 200,
+      "expect": [
+        { "path": "data.status", "op": "eq", "value": "cancelled" }
+      ]
+    },
+    {
+      "title": "ตรวจว่าหลังยกเลิกบิล ic_trans.last_status = 1 และ pos_bill_inbox.cancelled_at ไม่ว่าง",
+      "do": "db.query",
+      "sql": "SELECT t.last_status, (p.cancelled_at IS NOT NULL)::int AS is_cancelled FROM ic_trans t JOIN pos_bill_inbox p ON p.doc_no = t.doc_no WHERE t.doc_no = :'posdoc' AND t.trans_flag = 44",
+      "rows": 1,
+      "expect": [
+        { "col": "last_status", "op": "eq", "value": "1" },
+        { "col": "is_cancelled", "op": "eq", "value": "1" }
+      ]
+    }
+  ],
+  "cleanup": [
+    {
+      "title": "ลบข้อมูลบิลทดสอบ UAT-POS-* ออกจากตารางทั้งหมดในฐานข้อมูล domepos",
+      "do": "db.exec",
+      "sql": "DELETE FROM ic_trans WHERE trans_flag = 45 AND doc_ref = '{{posdoc}}'; DELETE FROM ic_trans_detail WHERE doc_no = '{{posdoc}}' AND trans_flag = 44; DELETE FROM ic_trans WHERE doc_no = '{{posdoc}}' AND trans_flag = 44; DELETE FROM cb_trans_detail WHERE doc_no = '{{posdoc}}'; DELETE FROM cb_trans WHERE doc_no = '{{posdoc}}'; DELETE FROM gl_journal_detail WHERE doc_no = '{{posdoc}}'; DELETE FROM gl_journal WHERE doc_no = '{{posdoc}}'; DELETE FROM pos_bill_inbox WHERE doc_no = '{{posdoc}}';"
+    }
+  ]
+}

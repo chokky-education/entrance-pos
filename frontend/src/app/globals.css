@@ -1,0 +1,369 @@
+@import "tailwindcss";
+
+/* ============================================================
+   DOME Pos Premium Design System (Global Shared — ใช้ทุกแท็บ)
+   โทน Espresso + Terracotta + ครีม · ทุกจอใช้คลาส dp-* ชุดเดียวกัน
+   ============================================================ */
+:root {
+  --dp-espresso: #1f130c;
+  --dp-espresso-2: #3a2416;
+  --dp-roast: #6a3a1c;
+  --dp-terracotta: #b5651d;
+  --dp-terracotta-2: #d4823a;
+  --dp-terracotta-dark: #8f4c10;
+  --dp-gold: #e9bc74;
+  --dp-cream: #fbf7f1;
+  --dp-cream-2: #f5ede2;
+  --dp-line: #ebe0d3;
+  --dp-ink: #2a1f18;
+  --dp-muted: #85725f;
+  --dp-emerald: #0f9d6b;
+  --dp-emerald-dark: #0b7a53;
+  --dp-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dp-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dp-shadow-sm: 0 1px 2px rgb(42 31 24 / 0.05), 0 4px 12px -6px rgb(42 31 24 / 0.1);
+  --dp-shadow-md: 0 1px 2px rgb(42 31 24 / 0.04), 0 10px 28px -12px rgb(42 31 24 / 0.2);
+  --dp-shadow-lg: 0 2px 6px rgb(42 31 24 / 0.06), 0 22px 44px -16px rgb(42 31 24 / 0.32);
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: var(--dp-cream);
+    color: var(--dp-ink);
+    font-family: var(--font-prompt), "Sarabun", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: rgb(181 101 29 / 0.22);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--dp-terracotta);
+    outline-offset: 2px;
+  }
+
+  /* กดปุ่มแล้วยุบลงนิดเดียว ให้รู้สึกว่ากดโดนจริง */
+  button:not(:disabled):active {
+    transform: translateY(1px) scale(0.98);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(133 114 95 / 0.35) transparent;
+  }
+}
+
+@layer components {
+  /* พื้นหลังแอป: ครีมอุ่น + แสงฟุ้งมุมจอ */
+  .dp-app {
+    background:
+      radial-gradient(1100px 520px at -10% -10%, rgb(212 130 58 / 0.1), transparent 60%),
+      radial-gradient(900px 480px at 110% 110%, rgb(15 157 107 / 0.06), transparent 60%),
+      var(--dp-cream);
+  }
+
+  /* แถบหัวเรื่อง Espresso ไล่เฉด + เส้นทองบาง ๆ ด้านล่าง */
+  .dp-header {
+    position: relative;
+    background: linear-gradient(115deg, var(--dp-espresso) 0%, var(--dp-espresso-2) 48%, var(--dp-roast) 100%);
+    background-size: 160% 100%;
+    animation: dpHeaderSheen 18s ease-in-out infinite alternate;
+    box-shadow: 0 8px 24px -14px rgb(31 19 12 / 0.7);
+  }
+  .dp-header::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgb(233 188 116 / 0.75), transparent);
+  }
+
+  /* กระจกฝ้าบนพื้นเข้ม */
+  .dp-glass {
+    background: rgb(255 255 255 / 0.07);
+    border: 1px solid rgb(255 255 255 / 0.12);
+    backdrop-filter: blur(10px);
+  }
+
+  /* แท็บหลัก */
+  .dp-tab {
+    color: rgb(255 255 255 / 0.82);
+    transition: background-color 0.25s var(--dp-ease-out), color 0.25s, box-shadow 0.3s var(--dp-ease-out);
+  }
+  .dp-tab:hover {
+    background: rgb(255 255 255 / 0.1);
+    color: #fff;
+  }
+  .dp-tab-active,
+  .dp-tab-active:hover {
+    background: linear-gradient(180deg, #ffffff, #fff4e6);
+    color: var(--dp-terracotta-dark);
+    box-shadow: 0 6px 16px -6px rgb(0 0 0 / 0.55), inset 0 -2px 0 var(--dp-terracotta);
+  }
+
+  /* การ์ดพื้นขาวมาตรฐาน */
+  .dp-surface {
+    background: #fff;
+    border: 1px solid var(--dp-line);
+    border-radius: 1rem;
+    box-shadow: var(--dp-shadow-sm);
+  }
+
+  /* ลอยขึ้นเมื่อชี้ */
+  .dp-lift {
+    transition: transform 0.28s var(--dp-ease-out), box-shadow 0.28s var(--dp-ease-out), border-color 0.2s;
+  }
+  .dp-lift:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--dp-shadow-lg);
+  }
+
+  /* ปุ่มหลัก Terracotta ไล่เฉด */
+  .dp-btn-primary {
+    color: #fff;
+    background: linear-gradient(135deg, var(--dp-terracotta-2), var(--dp-terracotta) 55%, var(--dp-terracotta-dark));
+    box-shadow: 0 6px 16px -8px rgb(181 101 29 / 0.75), inset 0 1px 0 rgb(255 255 255 / 0.22);
+    transition: filter 0.2s, box-shadow 0.25s var(--dp-ease-out), transform 0.15s;
+  }
+  .dp-btn-primary:hover:not(:disabled) {
+    filter: brightness(1.07);
+    box-shadow: 0 10px 22px -8px rgb(181 101 29 / 0.85), inset 0 1px 0 rgb(255 255 255 / 0.25);
+  }
+
+  /* ปุ่มสำเร็จ (เขียว) ไล่เฉด */
+  .dp-btn-success {
+    color: #fff;
+    background: linear-gradient(135deg, #19b47c, var(--dp-emerald) 55%, var(--dp-emerald-dark));
+    box-shadow: 0 6px 16px -8px rgb(15 157 107 / 0.75), inset 0 1px 0 rgb(255 255 255 / 0.22);
+    transition: filter 0.2s, box-shadow 0.25s var(--dp-ease-out), transform 0.15s;
+  }
+  .dp-btn-success:hover:not(:disabled) {
+    filter: brightness(1.07);
+  }
+
+  /* ปุ่มรอง พื้นขาว */
+  .dp-btn-ghost {
+    color: #4a3b30;
+    background: #fff;
+    border: 1px solid var(--dp-line);
+    box-shadow: 0 1px 2px rgb(42 31 24 / 0.04);
+    transition: border-color 0.2s, color 0.2s, box-shadow 0.25s var(--dp-ease-out), background-color 0.2s, transform 0.15s;
+  }
+  .dp-btn-ghost:hover:not(:disabled) {
+    border-color: rgb(181 101 29 / 0.55);
+    color: var(--dp-terracotta-dark);
+    box-shadow: 0 6px 14px -8px rgb(181 101 29 / 0.45);
+  }
+
+  /* ชิปเลือก (หมวดหมู่/ช่องทาง/วิธีชำระ) */
+  .dp-chip {
+    color: #5b4a3d;
+    background: #fff;
+    border: 1px solid var(--dp-line);
+    transition: all 0.22s var(--dp-ease-out);
+  }
+  .dp-chip:hover {
+    border-color: rgb(181 101 29 / 0.5);
+    color: var(--dp-terracotta-dark);
+  }
+  .dp-chip-active,
+  .dp-chip-active:hover {
+    color: #fff;
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--dp-terracotta-2), var(--dp-terracotta) 60%, var(--dp-terracotta-dark));
+    box-shadow: 0 6px 14px -7px rgb(181 101 29 / 0.8);
+  }
+
+  /* ช่องกรอก */
+  .dp-input {
+    background: #fff;
+    border: 1px solid var(--dp-line);
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .dp-input:focus,
+  .dp-input:focus-within {
+    border-color: var(--dp-terracotta);
+    box-shadow: 0 0 0 3px rgb(181 101 29 / 0.15);
+    outline: none;
+  }
+
+  /* หัวข้อ section */
+  .dp-title {
+    color: var(--dp-ink);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .dp-subtitle {
+    color: var(--dp-muted);
+  }
+
+  /* ตัวเลขเงินไล่เฉดทอง-terracotta */
+  .dp-money {
+    background: linear-gradient(135deg, var(--dp-terracotta-2), var(--dp-terracotta-dark));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* ปุ่มชำระเงิน: เขียวไล่เฉด + แสงวิ่งผ่าน */
+  .dp-pay {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #1cbf84 0%, var(--dp-emerald) 45%, #087049 100%);
+    box-shadow: 0 12px 26px -12px rgb(15 157 107 / 0.85), inset 0 1px 0 rgb(255 255 255 / 0.25);
+    transition: filter 0.2s, box-shadow 0.3s var(--dp-ease-out), transform 0.15s;
+  }
+  .dp-pay:hover:not(:disabled) {
+    filter: brightness(1.06);
+    box-shadow: 0 16px 32px -12px rgb(15 157 107 / 0.95), inset 0 1px 0 rgb(255 255 255 / 0.3);
+  }
+  .dp-pay:not(:disabled)::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 35%;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.28), transparent);
+    animation: dpShimmer 3.2s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  /* จุดสถานะสดมีวงกระเพื่อม */
+  .dp-live {
+    position: relative;
+  }
+  .dp-live::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: inherit;
+    animation: dpPing 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  /* Modal */
+  .dp-backdrop {
+    background: rgb(20 12 8 / 0.55);
+    backdrop-filter: blur(6px);
+    animation: dpFadeIn 0.25s ease backwards;
+  }
+  .dp-modal {
+    animation: dpModalIn 0.42s var(--dp-ease-spring) backwards;
+  }
+}
+
+/* ---------------- Animation utilities ---------------- */
+.dp-enter {
+  animation: dpFadeUp 0.45s var(--dp-ease-out) backwards;
+}
+/* ใส่ style={{ "--i": index }} เพื่อไล่จังหวะเข้าทีละใบ (สูงสุด ~0.6 วินาที) */
+.dp-stagger {
+  animation: dpFadeUp 0.5s var(--dp-ease-out) backwards;
+  animation-delay: calc(min(var(--i, 0), 14) * 40ms);
+}
+.dp-slide-in {
+  animation: dpSlideIn 0.38s var(--dp-ease-out) backwards;
+}
+.dp-pop {
+  animation: dpPop 0.42s var(--dp-ease-spring) backwards;
+}
+.dp-bump {
+  animation: dpBump 0.38s var(--dp-ease-spring);
+}
+.dp-banner {
+  animation: dpBannerIn 0.35s var(--dp-ease-out) backwards;
+}
+.dp-expand {
+  animation: dpExpand 0.3s var(--dp-ease-out) backwards;
+  transform-origin: top;
+}
+.dp-plus-one {
+  animation: dpPlusOne 0.6s var(--dp-ease-out) forwards;
+}
+.dp-card-hit {
+  animation: dpCardHit 0.45s var(--dp-ease-spring);
+}
+.dp-glow-ready {
+  animation: dpGlowReady 2.2s ease-in-out infinite;
+}
+
+@keyframes dpFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dpFadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dpSlideIn {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dpPop {
+  0% { opacity: 0; transform: scale(0.4); }
+  60% { opacity: 1; transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+@keyframes dpBump {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+@keyframes dpBannerIn {
+  from { opacity: 0; transform: translateY(-100%); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dpExpand {
+  from { opacity: 0; transform: scaleY(0.85) translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dpModalIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.95); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dpPlusOne {
+  0% { opacity: 0; transform: translateY(6px) scale(0.6); }
+  25% { opacity: 1; transform: translateY(-4px) scale(1.12); }
+  100% { opacity: 0; transform: translateY(-34px) scale(1); }
+}
+@keyframes dpCardHit {
+  0% { box-shadow: 0 0 0 0 rgb(15 157 107 / 0.55); }
+  100% { box-shadow: 0 0 0 14px rgb(15 157 107 / 0); }
+}
+@keyframes dpGlowReady {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(15 157 107 / 0.35), var(--dp-shadow-sm); }
+  50% { box-shadow: 0 0 0 6px rgb(15 157 107 / 0.12), var(--dp-shadow-md); }
+}
+@keyframes dpPing {
+  75%, 100% { opacity: 0; transform: scale(2.4); }
+}
+@keyframes dpShimmer {
+  0% { transform: translateX(-120%) skewX(-20deg); }
+  60%, 100% { transform: translateX(380%) skewX(-20deg); }
+}
+@keyframes dpHeaderSheen {
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}

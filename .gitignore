@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js build output
+.next/
+out/
+build/
+dist/
+tsconfig.tsbuildinfo
+
+# Go binaries & test cache
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+backend/domepos-api
+
+# Environment & Secrets (IRON RULE 21: NO SECRET IN GIT)
+.env
+.env.*
+!.env.example
+**/configs/SMLConfig*.json
+*.pem
+*.key
+credentials*.json
+
+# UAT runtime artifacts & logs
+uat/runs/
+uat/uat-runs/
+uat/data/run-history/
+*.log
+
+# Claude Code local settings (per-machine)
+.claude/settings.local.json

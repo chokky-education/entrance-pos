@@ -1,0 +1,80 @@
+{
+  "id": "pos-data-reconcile-and-promo-audit",
+  "title": "ตรวจฐานข้อมูล DOME Pos (domepos) & กระทบยอดบัญชี: เครื่อง POS, ค่าเริ่มต้น, โปรโมชั่น, แต้มสะสม, บิล POS ↔ สต็อก IC ↔ เงินสด CB ↔ บัญชีคู่ GL ดุล 100%",
+  "module": "pos",
+  "lens": "data",
+  "severityOnFail": "S1",
+  "description": "ตรวจสอบความถูกต้องของตารางระบบขายหน้าร้าน DOME Pos ในฐานข้อมูล domepos (pos_id, posconfig, pos_promotions, pos_point_condition, pos_member_groups, pos_bill_inbox) และกระทบยอดบิลขาย POS กับ ic_trans (trans_flag=44), cb_trans และ gl_journal_detail ต้องสมดุล เดบิต = เครดิต ทุกบิล",
+  "steps": [
+    {
+      "title": "เปิดเข้าหน้าเว็บ DOME Pos (/) โหมดเจ้าของคนเดียว และเรียก Bootstrap เพื่อให้ตาราง POS พร้อมใช้งาน",
+      "do": "ui.demoLogin"
+    },
+    {
+      "title": "เรียก GET /api/pos/bootstrap?pos_id=POS-01 เพื่อซิงค์โครงสร้างตาราง POS ในฐานข้อมูล domepos",
+      "do": "api.request",
+      "method": "GET",
+      "path": "/api/pos/bootstrap?pos_id=POS-01",
+      "expectStatus": 200
+    },
+    {
+      "title": "ตรวจตารางรหัสเครื่อง POS (pos_id): มีเครื่อง POS-01 พร้อมรหัสคลังและที่เก็บ",
+      "do": "db.query",
+      "sql": "SELECT machinecode, COALESCE(pos_ic_wht, '') AS wh, COALESCE(pos_ic_shelf, '') AS shelf FROM pos_id WHERE machinecode = 'POS-01'",
+      "rows": 1,
+      "expect": [
+        { "col": "machinecode", "op": "eq", "value": "POS-01" },
+        { "col": "wh", "op": "ne", "value": "" },
+        { "col": "shelf", "op": "ne", "value": "" }
+      ]
+    },
+    {
+      "title": "ตรวจตารางกำหนดค่าเริ่มต้น POS (posconfig): มีอัตราภาษี VAT 7.00% และรหัสลูกหนี้เริ่มต้น",
+      "do": "db.query",
+      "sql": "SELECT COUNT(*)::int AS cnt, COALESCE(MAX(vat_rate), 0)::numeric(18,2) AS vat_rate FROM posconfig",
+      "rows": 1,
+      "expect": [
+        { "col": "cnt", "op": "gte", "value": "1" },
+        { "col": "vat_rate", "op": "eq", "value": "7.00" }
+      ]
+    },
+    {
+      "title": "ตรวจตารางสูตรโปรโมชั่น POS (pos_promotions): มีโปรโมชั่นเริ่มต้นพร้อมใช้งาน",
+      "do": "db.query",
+      "sql": "SELECT COUNT(*)::int AS promo_cnt FROM pos_promotions WHERE COALESCE(is_active, 1) = 1",
+      "rows": 1,
+      "expect": [
+        { "col": "promo_cnt", "op": "gte", "value": "1" }
+      ]
+    },
+    {
+      "title": "ตรวจตารางเงื่อนไขแต้มสะสม (pos_point_condition) และกลุ่มสมาชิก (pos_member_groups)",
+      "do": "db.query",
+      "sql": "SELECT (SELECT COUNT(*)::int FROM pos_point_condition) AS point_cnt, (SELECT COUNT(*)::int FROM pos_member_groups) AS group_cnt",
+      "rows": 1,
+      "expect": [
+        { "col": "point_cnt", "op": "gte", "value": "1" },
+        { "col": "group_cnt", "op": "gte", "value": "1" }
+      ]
+    },
+    {
+      "title": "กระทบยอดสมุดรายวัน GL ของบิลขาย POS ทุกใบใน domepos: SUM(debit) - SUM(credit) ต้องเท่ากับ 0.00",
+      "do": "db.query",
+      "sql": "SELECT COALESCE(SUM(g.debit) - SUM(g.credit), 0)::numeric(18,2) AS gl_diff FROM gl_journal_detail g JOIN ic_trans t ON t.doc_no = g.doc_no WHERE t.trans_flag = 44 AND COALESCE(t.is_pos, 0) = 1 AND COALESCE(t.last_status, 0) = 0",
+      "rows": 1,
+      "expect": [
+        { "col": "gl_diff", "op": "eq", "value": "0.00" }
+      ]
+    },
+    {
+      "title": "กระทบยอดหัวบิลขาย POS (ic_trans) เทียบตารางรับชำระเงิน (cb_trans): ไม่มีบิลที่ยอดรับเงินขาด (mismatch_cnt = 0)",
+      "do": "db.query",
+      "sql": "SELECT COUNT(*)::int AS mismatch_cnt FROM ic_trans t JOIN cb_trans c ON c.doc_no = t.doc_no AND c.trans_flag = t.trans_flag WHERE t.trans_flag = 44 AND COALESCE(t.is_pos, 0) = 1 AND COALESCE(t.last_status, 0) = 0 AND COALESCE(t.total_amount, 0) <> COALESCE(c.total_amount, 0)",
+      "rows": 1,
+      "expect": [
+        { "col": "mismatch_cnt", "op": "eq", "value": "0" }
+      ]
+    }
+  ],
+  "cleanup": []
+}
