@@ -1,0 +1,29 @@
+{
+  "id": "pos-menu-edit-price",
+  "title": "แก้ราคาเมนูตั้งต้นแล้วต้องเหลือแถวเดียว และราคาใหม่ยังอยู่หลังเปิดหน้าใหม่",
+  "module": "pos-manage",
+  "lens": "regression",
+  "severityOnFail": "high",
+  "description": "กันบั๊ก: แก้ราคาเมนูตั้งต้น (CAFE-ESP-02) แล้วตารางมี 2 แถวรหัสซ้ำ และหน้าขายกลับไปใช้ราคาตั้งต้นหลัง reload ทั้งที่ฐานข้อมูลบันทึกราคาใหม่แล้ว",
+  "steps": [
+    { "title": "เปิดหน้า DOME Pos", "do": "ui.demoLogin" },
+    { "title": "เปิดแท็บจัดการสินค้า", "do": "ui.click", "selector": "[data-testid=\"pos-starter-tab-manage\"]" },
+    { "title": "ค้นหาเมนูลาเต้", "do": "ui.fill", "selector": "input[placeholder=\"ค้นหารหัส / ชื่อสินค้า...\"]", "value": "ลาเต้" },
+    { "title": "กดแก้ไข CAFE-ESP-02", "do": "ui.click", "selector": "[data-testid=\"pos-manage-edit-CAFE-ESP-02\"]" },
+    { "title": "เปลี่ยนราคาเป็น 91", "do": "ui.fill", "selector": "[data-testid=\"pos-manage-items-table\"] input[inputmode=\"decimal\"]", "value": "91" },
+    { "title": "กดบันทึก", "do": "ui.click", "selector": "[data-testid=\"pos-manage-items-table\"] button:has-text(\"บันทึก\")" },
+    { "title": "ตารางมีแถว CAFE-ESP-02 แค่แถวเดียว", "do": "ui.expectVisible", "selector": "[data-testid=\"pos-manage-edit-CAFE-ESP-02\"]", "nth": 1, "visible": false, "timeout": 3000 },
+    { "title": "เปิดหน้าใหม่", "do": "ui.goto", "path": "/" },
+    { "title": "การ์ดหน้าขายแสดงราคาใหม่ 91 หลังเปิดหน้าใหม่", "do": "ui.expectText", "selector": "[data-testid=\"pos-starter-item-CAFE-ESP-02\"]", "text": "91" },
+    { "title": "ตรวจความสะอาด Console / HTTP", "do": "ui.expectClean" }
+  ],
+  "cleanup": [
+    {
+      "title": "คืนราคา CAFE-ESP-02 เป็น 85.00",
+      "do": "api.request",
+      "method": "POST",
+      "path": "/api/pos/shift",
+      "body": { "action": "upsert_item", "item_code": "CAFE-ESP-02", "barcode": "8859001001028", "name": "คาเฟ่ลาเต้เย็น นมสดฮอกไกโด", "name_en": "Iced Hokkaido Milk Latte", "category": "COFFEE", "unit_code": "แก้ว", "retail_price": "85.00", "image_url": "/api/pos/image?e=product&k=CAFE-ESP-02&v=1" }
+    }
+  ]
+}

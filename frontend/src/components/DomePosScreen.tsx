@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Beer,
   CheckCircle2,
@@ -753,7 +753,6 @@ export function DomePosScreen({
               const price = String(r.retail_price || "0").trim();
               if (!code || cmpDec(price, "0") <= 0) continue;
               if (seenLoadedCodes.has(code)) continue;
-              if (STARTER_MENU_CATALOG.some((m) => m.code === code)) continue;
               seenLoadedCodes.add(code);
               const rawCat = String(r.category || "").toUpperCase();
               const validCat: Exclude<StarterCategory, "ALL"> =
@@ -783,10 +782,10 @@ export function DomePosScreen({
                 supportsSweetness: validCat === "COFFEE" || validCat === "TEA",
                 supportsBeerServe: validCat === "BEER",
               });
-              if (loaded.length >= 48) break;
+              if (loaded.length >= 48 + STARTER_MENU_CATALOG.length) break;
             }
           }
-          if (loaded.length >= 48) break;
+          if (loaded.length >= 48 + STARTER_MENU_CATALOG.length) break;
         }
         setErpSyncedItems(loaded);
         setCloudflareStatus((prev) => ({
@@ -917,6 +916,23 @@ export function DomePosScreen({
     void syncFromErpBackend();
   }, [syncFromErpBackend]);
 
+  // คีย์ลัดตามป้ายบนจอ: F2 = ช่องค้นหาสินค้า, F9 = ชำระเงิน (click() ไม่ทำงานเมื่อปุ่ม disabled)
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const payButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "F2") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (e.key === "F9") {
+        e.preventDefault();
+        payButtonRef.current?.click();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // เชื่อมต่อ Cloudflare D1 & R2 แบบ Realtime ผ่าน Server-Sent Events (SSE /api/pos/cloudflare/stream?mode=sse)
   useEffect(() => {
     if (typeof window === "undefined" || typeof EventSource === "undefined") {
@@ -1037,16 +1053,32 @@ export function DomePosScreen({
     return () => clearInterval(timer);
   }, [autoSync30sEnabled, handleTriggerRealtimeSync]);
 
+  // รหัสเดียวกันแสดงแถวเดียว ณ ตำแหน่งเดิม: ค่าที่เพิ่งแก้ในจอนี้ > ชื่อ/ราคา/หน่วย/หมวดจากฐานข้อมูล > เมนูตั้งต้น
+  // (เมนูตั้งต้นคงรูปและป้ายเดิม; เมนูใหม่ที่ยังไม่มีในฐานขึ้นก่อน)
   const allMenuItems = useMemo(() => {
-    const merged: StarterMenuItem[] = [...customMenuItems, ...STARTER_MENU_CATALOG];
-    const seen = new Set(merged.map((m) => m.code));
-    for (const item of erpSyncedItems) {
-      if (!seen.has(item.code)) {
-        seen.add(item.code);
-        merged.push(item);
-      }
-    }
-    return merged;
+    const edited = new Map(customMenuItems.map((m) => [m.code, m]));
+    const fromDb = new Map(erpSyncedItems.map((m) => [m.code, m]));
+    const catalog = STARTER_MENU_CATALOG.map((item) => {
+      const db = fromDb.get(item.code);
+      const base = db
+        ? {
+            ...item,
+            name: db.name,
+            price: db.price,
+            unit: db.unit,
+            category: db.category,
+            supportsSweetness: db.supportsSweetness,
+            supportsBeerServe: db.supportsBeerServe,
+          }
+        : item;
+      return edited.get(item.code) ?? base;
+    });
+    const known = new Set(catalog.map((m) => m.code));
+    const others = erpSyncedItems
+      .filter((m) => !known.has(m.code))
+      .map((m) => edited.get(m.code) ?? m);
+    others.forEach((m) => known.add(m.code));
+    return [...customMenuItems.filter((m) => !known.has(m.code)), ...catalog, ...others];
   }, [customMenuItems, erpSyncedItems]);
 
   const filteredMenuItems = useMemo(() => {
@@ -2089,6 +2121,7 @@ export function DomePosScreen({
                 <div className="relative ml-auto flex h-9 min-w-[200px] flex-1 items-center">
                   <Search className="pointer-events-none absolute left-3 size-4 text-[#B5651D]" />
                   <input
+                    ref={searchInputRef}
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -2647,6 +2680,7 @@ export function DomePosScreen({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    ref={payButtonRef}
                     data-testid="pos-starter-confirm-pay-btn"
                     onClick={() => {
                       playPosSound("chaching");
