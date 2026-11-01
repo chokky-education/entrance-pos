@@ -35,3 +35,12 @@ uat/data/run-history/
 
 # Claude Code local settings (per-machine)
 .claude/settings.local.json
+
+# Tutorial video build artifacts (regenerate with the video/ pipeline)
+video/shots/
+video/tts/
+video/audio/
+video/render/
+video/capture.json
+# Cursor PNGs copied from the IssueMate video kit (Windows Aero look) — kept local until licensing is confirmed
+video/assets/
