@@ -199,12 +199,29 @@ func TestDomePosEndToEnd(t *testing.T) {
 		"action":    "upsert_item",
 		"code":      testCode,
 		"name_1":    "กาแฟส้มยูซุพิเศษ",
+		"name_en":   "Yuzu Orange Coffee",
 		"unit_code": "แก้ว",
 		"category":  "COFFEE",
 		"price":     "125.50",
 	})
 	if status != http.StatusOK || upsertRes["status"] != "UPSERTED" {
 		t.Fatalf("upsert_item failed: status=%d body=%v", status, upsertRes)
+	}
+	// the POS edit form sends no name_en: a price edit must keep the stored English name
+	status, upsertRes = doJSONRequest(t, router, http.MethodPost, "/api/v1/pos/shift", map[string]any{
+		"action":       "upsert_item",
+		"item_code":    testCode,
+		"name":         "กาแฟส้มยูซุพิเศษ",
+		"unit_code":    "แก้ว",
+		"category":     "COFFEE",
+		"retail_price": "129.00",
+	})
+	if status != http.StatusOK || upsertRes["status"] != "UPSERTED" {
+		t.Fatalf("upsert_item (price edit) failed: status=%d body=%v", status, upsertRes)
+	}
+	var nameEn string
+	if err := store.Pool.QueryRow(ctx, `SELECT name_eng_1 FROM ic_inventory WHERE code = $1`, testCode).Scan(&nameEn); err != nil || nameEn != "Yuzu Orange Coffee" {
+		t.Fatalf("price edit overwrote name_eng_1: got %q err=%v", nameEn, err)
 	}
 
 	// 8. Upload binary image for item & fetch it back

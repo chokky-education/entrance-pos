@@ -582,7 +582,13 @@ func (s *Store) ShiftAction(ctx context.Context, body map[string]any) (map[strin
 			code = fmt.Sprintf("CAFE-NEW-%04d", now.Unix()%10000)
 		}
 		name := strVal(firstVal(body, "name", "name_1"), code)
-		nameEn := strVal(firstVal(body, "name_en", "nameEn", "name_eng_1"), name)
+		nameEn := strVal(firstVal(body, "name_en", "nameEn", "name_eng_1"), "")
+		if nameEn == "" { // the POS edit form omits name_en: keep the stored one, new items fall back to name
+			_ = s.Pool.QueryRow(ctx, `SELECT COALESCE(name_eng_1, '') FROM ic_inventory WHERE code = $1`, code).Scan(&nameEn)
+			if nameEn == "" {
+				nameEn = name
+			}
+		}
 		unit := strVal(firstVal(body, "unit", "unit_code", "unit_standard"), "แก้ว")
 		barcode := strVal(body["barcode"], code)
 		category := strings.ToUpper(strVal(firstVal(body, "category", "category_code", "group_main"), inferCategoryFromCode(code)))
