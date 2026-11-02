@@ -640,7 +640,11 @@ export class FirebasePosStore {
     this.inMemoryOnly = Boolean(opts.inMemoryOnly);
     this.persistFilePath =
       opts.persistFilePath ||
-      path.join(process.cwd(), ".domepos-firebase-state.json");
+      process.env.DOMEPOS_STATE_FILE ||
+      // Serverless (Vercel) filesystems are read-only except /tmp; Firestore remains the durable store.
+      (process.env.VERCEL
+        ? path.join("/tmp", ".domepos-firebase-state.json")
+        : path.join(process.cwd(), ".domepos-firebase-state.json"));
     this.fbConfig = loadFirebaseConfigFromEnv();
 
     this.startupConfig = {
