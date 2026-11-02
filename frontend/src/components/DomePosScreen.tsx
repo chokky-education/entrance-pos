@@ -493,7 +493,7 @@ export function DomePosScreen({
   const [animatingItemCode, setAnimatingItemCode] = useState<string | null>(
     null,
   );
-  const [expandedLineId, setExpandedLineId] = useState<string | null>("init-1");
+  const [expandedLineId, setExpandedLineId] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState<boolean>(false);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [chargeOpen, setChargeOpen] = useState<boolean>(false);
@@ -501,113 +501,16 @@ export function DomePosScreen({
   const [orderRemark, setOrderRemark] = useState<string>("");
   const [discountInput, setDiscountInput] = useState<string>("");
 
-  // ตะกร้าสินค้าปัจจุบัน (เริ่มต้นมีออเดอร์ตัวอย่างพร้อมกดขายด่วนได้ทันที)
-  const [cartLines, setCartLines] = useState<StarterCartLine[]>([
-    {
-      lineId: "init-1",
-      itemCode: "CF-AME-C",
-      barcode: "8859100001022",
-      name: "Americano เย็น",
-      category: "COFFEE",
-      unitCode: "แก้ว",
-      qty: "1",
-      basePrice: "50.00",
-      addonPrice: "0.00",
-      unitPrice: "50.00",
-      sweetness: "หวาน 50%",
-      addonLabel: "",
-      note: "",
-    },
-    {
-      lineId: "init-2",
-      itemCode: "NC-THA-C",
-      barcode: "8859100002012",
-      name: "ชาไทย เย็น",
-      category: "NON_COFFEE",
-      unitCode: "แก้ว",
-      qty: "1",
-      basePrice: "50.00",
-      addonPrice: "0.00",
-      unitPrice: "50.00",
-      sweetness: "หวาน 50%",
-      addonLabel: "",
-      note: "",
-    },
-  ]);
+  // ตะกร้าสินค้าปัจจุบัน (เริ่มต้นว่างเปล่า พร้อมใช้งานจริง)
+  const [cartLines, setCartLines] = useState<StarterCartLine[]>([]);
 
-  // โต๊ะชั้น 1 Cafe & ห้องซ้อมดนตรีชั้น 2 ที่เปิดบิลค้างไว้
-  const [heldTables, setHeldTables] = useState<Record<string, HeldTableOrder>>({
-    S1: {
-      tableId: "S1",
-      tableName: "ห้องซ้อมดนตรี S1 (ชั้น 2 · In-Ear Monitor & OTG)",
-      zone: "STUDIO_F2",
-      guests: 5,
-      openedAt: "16:00",
-      serviceChannel: "DINE_IN",
-      discountAmount: "0.00",
-      remark: "วงนักศึกษา มรภ.บ้านสมเด็จฯ · ซ้อม In-Ear + อัดเสียงแยก Track ผ่าน OTG",
-      lines: [
-        {
-          lineId: "held-s1-1",
-          itemCode: "ST-ROOM-01",
-          barcode: "8859100003011",
-          name: "ห้องซ้อมดนตรี In-Ear Monitor (ชั้น 2)",
-          category: "STUDIO",
-          unitCode: "ชั่วโมง",
-          qty: "2",
-          basePrice: "250.00",
-          addonPrice: "0.00",
-          unitPrice: "250.00",
-          sweetness: "",
-          addonLabel: "In-Ear ครบทุกเครื่อง + อัดแยก Track & คลิปผ่าน OTG (ฟรี)",
-          note: "",
-        },
-        {
-          lineId: "held-s1-2",
-          itemCode: "CF-LAT-C",
-          barcode: "8859100001032",
-          name: "Latte เย็น",
-          category: "COFFEE",
-          unitCode: "แก้ว",
-          qty: "2",
-          basePrice: "50.00",
-          addonPrice: "0.00",
-          unitPrice: "50.00",
-          sweetness: "หวาน 50%",
-          addonLabel: "",
-          note: "เสิร์ฟขึ้นห้องซ้อมชั้น 2",
-        },
-      ],
-    },
-  });
+  // โต๊ะชั้น 1 Cafe & ห้องซ้อมดนตรีชั้น 2 ที่เปิดบิลค้างไว้ (เริ่มต้นว่างทุกโต๊ะ)
+  const [heldTables, setHeldTables] = useState<Record<string, HeldTableOrder>>(
+    {},
+  );
 
-  // คิวบาริสต้าชั้น 1 & คิวห้องซ้อมดนตรีชั้น 2 (Entrance Creative Space KDS)
-  const [kdsQueue, setKdsQueue] = useState<KdsQueueOrder[]>([
-    {
-      queueNo: "A-001",
-      docNo: "ECS-6911-0001",
-      tableLabel: "ห้องซ้อมดนตรี S1 (ชั้น 2 · In-Ear Monitor)",
-      serviceChannel: "DINE_IN",
-      createdAt: "16:00",
-      status: "PREPARING",
-      items: [
-        {
-          name: "ห้องซ้อมดนตรี In-Ear Monitor (ชั้น 2)",
-          qty: "2",
-          unitCode: "ชั่วโมง",
-          modifierText: "หูฟังครบทุกเครื่อง · Mixer Digital แยก Track · อัดเสียง & คลิป OTG",
-          category: "STUDIO",
-        },
-        {
-          name: "Latte เย็น",
-          qty: "2",
-          unitCode: "แก้ว",
-          modifierText: "หวาน 50% · เสิร์ฟขึ้นชั้น 2",
-          category: "COFFEE",
-        },
-      ],
-    },
-  ]);
+  // คิวบาริสต้าชั้น 1 & คิวห้องซ้อมดนตรีชั้น 2 (เริ่มต้นว่าง)
+  const [kdsQueue, setKdsQueue] = useState<KdsQueueOrder[]>([]);
 
   // สินค้าที่ซิงค์มาจากฐานข้อมูล Firebase Firestore (/api/pos/sync) + เมนูที่เจ้าของร้านเพิ่มเอง
   const [erpSyncedItems, setErpSyncedItems] = useState<StarterMenuItem[]>([]);
@@ -696,7 +599,7 @@ export function DomePosScreen({
     openingFloat: "2000.00",
     cashierCode: "OWNER-01",
   });
-  const [queueCounter, setQueueCounter] = useState<number>(2);
+  const [queueCounter, setQueueCounter] = useState<number>(1);
 
   const speak = useCallback(
     (text: string) => {
