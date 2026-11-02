@@ -38,6 +38,12 @@ import {
   subDec,
 } from "@/lib/numeric";
 import { DomePosManagePanel } from "./DomePosManagePanel";
+import { ChargeScreen } from "./pos/ChargeScreen";
+import { ItemTile } from "./pos/ItemTile";
+import { LineEditDialog } from "./pos/LineEditDialog";
+import { PosNavDrawer } from "./pos/PosNavDrawer";
+import { PosTopBar } from "./pos/PosTopBar";
+import { TicketPanel } from "./pos/TicketPanel";
 
 export type StarterWorkTab = "order" | "tables" | "kds" | "reports" | "manage";
 export type ServiceChannel = "DINE_IN" | "TAKEAWAY" | "DELIVERY";
@@ -488,6 +494,9 @@ export function DomePosScreen({
     null,
   );
   const [expandedLineId, setExpandedLineId] = useState<string | null>("init-1");
+  const [navOpen, setNavOpen] = useState<boolean>(false);
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
+  const [chargeOpen, setChargeOpen] = useState<boolean>(false);
   const [payPulse, setPayPulse] = useState<boolean>(false);
   const [orderRemark, setOrderRemark] = useState<string>("");
   const [discountInput, setDiscountInput] = useState<string>("");
@@ -891,7 +900,20 @@ export function DomePosScreen({
     void syncFromErpBackend();
   }, [syncFromErpBackend]);
 
-  // คีย์ลัดตามป้ายบนจอ: F2 = ช่องค้นหาสินค้า, F9 = ชำระเงิน (click() ไม่ทำงานเมื่อปุ่ม disabled)
+  // รองรับการเปิดแท็บตรงผ่าน URL เช่น /pos?tab=tables|kds|reports|manage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get("tab") as StarterWorkTab | null;
+    if (
+      tabParam &&
+      ["order", "tables", "kds", "reports", "manage"].includes(tabParam)
+    ) {
+      setActiveTab(tabParam);
+    }
+  }, []);
+
+  // คีย์ลัดตามป้ายบนจอ: F2 = ช่องค้นหาสินค้า, F9 = เปิดหน้ารับเงิน หรือยืนยันชำระเงิน
   const searchInputRef = useRef<HTMLInputElement>(null);
   const payButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -902,6 +924,10 @@ export function DomePosScreen({
       } else if (e.key === "F9") {
         e.preventDefault();
         payButtonRef.current?.click();
+      } else if (e.key === "Escape") {
+        setNavOpen(false);
+        setEditingLineId(null);
+        setChargeOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1724,6 +1750,7 @@ export function DomePosScreen({
     setCashReceivedInput("");
     setOrderRemark("");
     setSubmittingBill(false);
+    setChargeOpen(false);
 
     const netFormatted = formatMoney(cartNetTotal, 2);
     setStatusBanner({
@@ -1867,998 +1894,515 @@ export function DomePosScreen({
   const preparingKdsCount = kdsQueue.filter(
     (k) => k.status !== "SERVED",
   ).length;
+  const editingLine =
+    cartLines.find((l) => l.lineId === editingLineId) ?? null;
 
   return (
     <div
-      className="dp-app flex h-full w-full flex-col overflow-hidden text-[#2A1F18]"
+      className="dp-app flex h-full w-full flex-col overflow-hidden text-[#212121]"
       data-testid="pos-starter-cafe-screen"
     >
-      {/* แถบหัวเรื่อง Espresso ไล่เฉด (dp-header) + แท็บกระจก (dp-glass/dp-tab) */}
-      <div className="dp-header z-10 flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 text-white">
-        <div className="flex flex-wrap items-center gap-2">
-          <span
-            data-testid="dome-pos-brand-badge"
-            className="dp-glass inline-flex h-9 items-center gap-2 rounded-xl px-2.5 text-xs font-extrabold text-white"
-          >
-            <img
-              src="/logo.png"
-              alt="Entrance Creative Space Logo"
-              data-testid="dome-pos-logo"
-              className="size-7 shrink-0 rounded-full object-cover ring-2 ring-[#E9BC74]/80 shadow-[0_0_14px_rgba(233,188,116,0.45)]"
-            />
-            <span className="bg-gradient-to-r from-white to-[#F4D9AE] bg-clip-text text-sm tracking-wide text-transparent">
-              Entrance Creative Space
-            </span>
-            <span className="hidden text-[11px] font-medium text-[#E9BC74]/90 sm:inline">
-              · ชั้น 1 Cafe & ชั้น 2 ห้องซ้อมดนตรี In-Ear (อิสรภาพ · มรภ.บ้านสมเด็จฯ)
-            </span>
-          </span>
+      {/* 1. Loyverse Single-Row Green Top Toolbar */}
+      <PosTopBar
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onOpenDrawer={() => setNavOpen(true)}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchInputRef={searchInputRef}
+        occupiedTableCount={occupiedTableCount}
+        preparingKdsCount={preparingKdsCount}
+        latencyMs={cloudflareStatus.latencyMs}
+        shiftOpen={shiftStatus.isOpen}
+        cashierCode={shiftStatus.cashierCode}
+        syncLoading={syncLoading}
+        onTriggerSync={() => void handleTriggerRealtimeSync(false)}
+        onOpenAddMenu={() => setShowAddMenuModal(true)}
+      />
 
-          {/* ปุ่มสลับ 5 แท็บหลัก E2E Workflow */}
-          <div className="dp-glass flex flex-wrap items-center gap-1 rounded-xl p-1">
-            <button
-              type="button"
-              data-testid="pos-starter-tab-order"
-              onClick={() => setActiveTab("order")}
-              className={`dp-tab inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-bold leading-none ${
-                activeTab === "order" ? "dp-tab-active" : ""
-              }`}
-            >
-              <Coffee className="size-3.5 shrink-0" />
-              <span>1. ขายหน้าร้าน (POS)</span>
-            </button>
+      {/* 2. Loyverse Left Hamburger Navigation Drawer */}
+      <PosNavDrawer
+        open={navOpen}
+        activeTab={activeTab}
+        onClose={() => setNavOpen(false)}
+        onSelectTab={setActiveTab}
+        onOpenAddMenu={() => setShowAddMenuModal(true)}
+        occupiedTableCount={occupiedTableCount}
+        preparingKdsCount={preparingKdsCount}
+        shiftStatus={shiftStatus}
+        firebaseStatus={cloudflareStatus}
+        menuCount={allMenuItems.length}
+        autoSyncCountdown={autoSyncCountdown}
+        syncLoading={syncLoading}
+        onTriggerSync={() => void handleTriggerRealtimeSync(false)}
+      />
 
-            <button
-              type="button"
-              data-testid="pos-starter-tab-tables"
-              onClick={() => setActiveTab("tables")}
-              className={`dp-tab inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-bold leading-none ${
-                activeTab === "tables" ? "dp-tab-active" : ""
-              }`}
-            >
-              <Store className="size-3.5 shrink-0" />
-              <span>2. ผังโต๊ะ Cafe & ห้องซ้อมชั้น 2</span>
-              {occupiedTableCount > 0 && (
-                <span key={occupiedTableCount} className="dp-pop inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-gradient-to-b from-rose-500 to-rose-700 px-1 text-[10px] font-extrabold text-white shadow-[0_2px_6px_rgba(225,29,72,0.5)]">
-                  {occupiedTableCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              data-testid="pos-starter-tab-kds"
-              onClick={() => setActiveTab("kds")}
-              className={`dp-tab inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-bold leading-none ${
-                activeTab === "kds" ? "dp-tab-active" : ""
-              }`}
-            >
-              <Flame className="size-3.5 shrink-0" />
-              <span>3. จอคิวบาริสต้า (KDS)</span>
-              {preparingKdsCount > 0 && (
-                <span key={preparingKdsCount} className="dp-pop inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-gradient-to-b from-emerald-500 to-emerald-700 px-1 text-[10px] font-extrabold text-white shadow-[0_2px_6px_rgba(16,185,129,0.5)]">
-                  {preparingKdsCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              data-testid="pos-starter-tab-reports"
-              onClick={() => setActiveTab("reports")}
-              className={`dp-tab inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-bold leading-none ${
-                activeTab === "reports" ? "dp-tab-active" : ""
-              }`}
-            >
-              <FileText className="size-3.5 shrink-0" />
-              <span>4. รายงาน & ปิดกะ</span>
-            </button>
-
-            <button
-              type="button"
-              data-testid="pos-starter-tab-manage"
-              onClick={() => setActiveTab("manage")}
-              className={`dp-tab inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-bold leading-none ${
-                activeTab === "manage" ? "dp-tab-active" : ""
-              }`}
-            >
-              <Cloud className="size-3.5 shrink-0" />
-              <span>5. จัดการสินค้า & Firebase</span>
-            </button>
-          </div>
-        </div>
-
-        {/* สถานะ Firebase Firestore + Storage, สถานะกะแคชเชียร์ & ปุ่มซิงค์สินค้า */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            data-testid="pos-starter-cloudflare-badge"
-            onClick={() => setActiveTab("manage")}
-            className="dp-glass inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-white transition hover:bg-white/15"
-            title="เชื่อมต่อฐานข้อมูล Firebase Firestore และเก็บรูปภาพทั้งหมดบน Firebase Storage แบบ Realtime"
-          >
-            <span className="dp-live size-2 rounded-full bg-emerald-400" />
-            <Database className="size-3.5 shrink-0 text-[#E9BC74]" />
-            <span>Firebase Realtime</span>
-            <span className="text-white/50">·</span>
-            <Cloud className="size-3.5 shrink-0 text-sky-200" />
-            <span>Firestore/Storage ({cloudflareStatus.latencyMs}ms)</span>
-          </button>
-
-          <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-300/30 bg-emerald-500/15 px-2.5 text-xs font-bold text-emerald-50 backdrop-blur">
-            <span
-              className={`size-2 rounded-full ${shiftStatus.isOpen ? "dp-live bg-emerald-300" : "bg-rose-300"}`}
-            />
-            <span>
-              กะ: {shiftStatus.cashierCode} (
-              {shiftStatus.isOpen ? `ออนไลน์ ${shiftStatus.openedAt} น.` : "ปิดกะแล้ว"}
-              )
-            </span>
-          </span>
-
-          <button
-            type="button"
-            data-testid="pos-starter-sync-btn"
-            onClick={() => void handleTriggerRealtimeSync(false)}
-            disabled={syncLoading}
-            className="dp-glass inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-white transition hover:bg-white/15 disabled:opacity-50"
-            title="ระบบซิงค์อัตโนมัติทุก 30 วินาที (คลิกเพื่อซิงค์ทันที)"
-          >
-            <RefreshCw
-              className={`size-3.5 shrink-0 ${syncLoading ? "animate-spin" : ""}`}
-            />
-            <span>
-              Auto Sync 30วิ ({autoSyncCountdown}s · {allMenuItems.length} เมนู)
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* แถบแจ้งสถานะการทำงาน */}
+      {/* Status Notification Bar */}
       {statusBanner && (
         <div
           data-testid="pos-starter-status-banner"
-          className={`dp-banner flex h-10 shrink-0 items-center justify-between px-4 text-xs font-bold text-white shadow-[0_6px_16px_-10px_rgba(0,0,0,0.5)] ${
+          className={`dp-banner flex h-9 shrink-0 items-center justify-between px-4 text-xs font-bold text-white ${
             statusBanner.type === "success"
-              ? "bg-gradient-to-r from-[#0B7A53] via-[#0F9D6B] to-[#19B47C]"
+              ? "bg-[#23863e]"
               : statusBanner.type === "error"
-                ? "bg-gradient-to-r from-[#9F1239] via-[#C62828] to-[#E0533D]"
-                : "bg-gradient-to-r from-[#8F4C10] via-[#B5651D] to-[#D4823A]"
+                ? "bg-[#e53935]"
+                : "bg-[#424242]"
           }`}
         >
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="dp-pop size-4 shrink-0" />
+            <CheckCircle2 className="size-4 shrink-0" />
             <span>{statusBanner.text}</span>
           </div>
           <button
             type="button"
             onClick={() => setStatusBanner(null)}
-            className="rounded-lg bg-white/15 px-2.5 py-1 text-xs transition hover:bg-white/25"
+            className="rounded bg-white/15 px-2.5 py-0.5 text-xs transition hover:bg-white/25"
           >
-            รับทราบ
+            ปิด
           </button>
         </div>
       )}
 
-      {/* เนื้อหาหลักของแต่ละแท็บ */}
+      {/* Main Content Area */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* TAB 1: ขายหน้าร้าน (Loyverse Sales Screen: Left Item Grid + Right Ticket Panel) */}
         {activeTab === "order" && (
           <div className="dp-enter flex h-full w-full flex-col lg:flex-row">
-            {/* ฝั่งซ้าย (58%): ProductCatalogView แบบ SML Ai Account POS ปกติ */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 lg:w-[58%]">
-              {/* แถวที่ 1: โหมดบริการ + เลือกโต๊ะ + ช่องสแกนบาร์โค้ด/ค้นหาสินค้า (SML POS Barcode Bar) */}
-              <div className="dp-surface mb-2.5 flex flex-wrap items-center gap-2 p-2">
-                <div className="flex h-9 items-center gap-1 rounded-xl bg-[#F5EDE2] p-1">
-                  {(
-                    [
-                      { id: "DINE_IN", label: "🍽️ ทานที่ร้าน" },
-                      { id: "TAKEAWAY", label: "🛍️ สั่งกลับบ้าน" },
-                      { id: "DELIVERY", label: "🛵 เดลิเวอรี่" },
-                    ] as { id: ServiceChannel; label: string }[]
-                  ).map((ch) => (
-                    <button
-                      key={ch.id}
-                      type="button"
-                      data-testid={`pos-starter-channel-${ch.id}`}
-                      onClick={() => setServiceChannel(ch.id)}
-                      className={`inline-flex h-7 items-center rounded-lg px-3 text-xs font-bold leading-none transition-all duration-300 ${
-                        serviceChannel === ch.id
-                          ? "dp-chip-active"
-                          : "text-[#6B5848] hover:bg-white/70"
-                      }`}
-                    >
-                      {ch.label}
-                    </button>
-                  ))}
+            {/* Left Panel: Category Pages Bar + 5-Column Item Grid */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#f5f5f5]">
+              {/* Loyverse Flat Category Tabs Bar */}
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[#e0e0e0] bg-white px-3">
+                <div className="flex flex-wrap items-center">
+                  {(Object.keys(CATEGORY_META) as StarterCategory[]).map(
+                    (cat) => {
+                      const active = activeCategory === cat;
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          data-testid={`pos-starter-cat-${cat.toLowerCase()}`}
+                          onClick={() => setActiveCategory(cat)}
+                          className={`relative inline-flex h-11 items-center px-3.5 text-xs font-bold transition ${
+                            active
+                              ? "text-[#2fa84f]"
+                              : "text-[#757575] hover:text-[#212121]"
+                          }`}
+                        >
+                          <span>{CATEGORY_META[cat].label}</span>
+                          {active && (
+                            <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#2fa84f]" />
+                          )}
+                        </button>
+                      );
+                    },
+                  )}
                 </div>
 
-                {serviceChannel === "DINE_IN" && (
-                  <div className="dp-input dp-enter flex h-9 items-center gap-1.5 rounded-xl px-2.5">
-                    <span className="text-xs font-bold text-[#8F4C10]">
-                      โต๊ะ/บาร์:
+                {/* Compact Default Sweetness / Option Strip (keeps default modifier testids accessible when LineEditDialog is closed) */}
+                {!editingLine && (
+                  <div className="hidden items-center gap-1 py-1 xl:flex">
+                    <span className="text-[11px] font-semibold text-[#757575]">
+                      ค่าเริ่มต้น:
                     </span>
+                    {SWEETNESS_OPTIONS.map((sw) => (
+                      <button
+                        key={sw.id}
+                        type="button"
+                        data-testid={`pos-starter-sweet-${sw.id}`}
+                        onClick={() => setSelectedSweetness(sw.id)}
+                        className={`rounded px-2 py-0.5 text-[10px] font-bold transition ${
+                          selectedSweetness === sw.id
+                            ? "bg-[#2fa84f] text-white"
+                            : "bg-[#f5f5f5] text-[#757575] hover:text-[#212121]"
+                        }`}
+                      >
+                        {sw.id.replace("หวาน ", "")}
+                      </button>
+                    ))}
                     <select
-                      aria-label="เลือกโต๊ะหรือบาร์"
-                      data-testid="pos-starter-table-select"
-                      value={selectedTableId}
-                      onChange={(e) => setSelectedTableId(e.target.value)}
-                      className="h-7 cursor-pointer rounded-lg bg-transparent px-1 text-xs font-bold text-[#2A1F18] outline-none"
+                      aria-label="ตัวเลือกเสริมเริ่มต้น"
+                      data-testid="pos-starter-addon-select"
+                      value={selectedAddonId}
+                      onChange={(e) => setSelectedAddonId(e.target.value)}
+                      className="dp-input h-6 rounded px-1.5 text-[10px] font-semibold text-[#212121]"
                     >
-                      {INITIAL_TABLES.map((tb) => (
-                        <option key={tb.tableId} value={tb.tableId}>
-                          {tb.tableName}
-                          {heldTables[tb.tableId] ? " (มีบิลพัก)" : ""}
+                      {ADDON_OPTIONS.map((ad) => (
+                        <option key={ad.id} value={ad.id}>
+                          {ad.label}
                         </option>
                       ))}
                     </select>
                   </div>
                 )}
-
-                <div className="relative ml-auto flex h-9 min-w-[200px] flex-1 items-center">
-                  <Search className="pointer-events-none absolute left-3 size-4 text-[#B5651D]" />
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="สแกนบาร์โค้ด หรือค้นหาชื่อสินค้า (F2)..."
-                    className="dp-input h-9 w-full rounded-xl bg-[#FBF7F1] pl-9 pr-3 text-xs font-semibold text-[#2A1F18] placeholder-[#A08C79] focus:bg-white"
-                  />
-                </div>
               </div>
 
-              {/* แถวที่ 2: หมวดหมู่สินค้า + ปุ่มจัดการ/เพิ่มเมนูใหม่ (Baseline h-8 เดียวกันเป๊ะ) */}
-              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-1.5">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {(Object.keys(CATEGORY_META) as StarterCategory[]).map(
-                    (cat) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        data-testid={`pos-starter-cat-${cat.toLowerCase()}`}
-                        onClick={() => setActiveCategory(cat)}
-                        className={`inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold leading-none ${
-                          activeCategory === cat ? "dp-chip-active" : "dp-chip"
-                        }`}
-                      >
-                        <span>{CATEGORY_META[cat].label}</span>
-                      </button>
-                    ),
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  data-testid="pos-starter-add-menu-btn"
-                  onClick={() => setShowAddMenuModal(true)}
-                  className="dp-btn-success inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-xs font-extrabold leading-none"
-                >
-                  <Plus className="size-3.5 shrink-0" />
-                  <span>+ เพิ่มเมนูใหม่ (Firebase)</span>
-                </button>
-              </div>
-
-              {/* ตารางการ์ดสินค้าแบบ SML Ai Account POS: ความสูงการ์ดกะทัดรัดเท่ากันทุกหมวดหมู่ (content-start items-start auto-rows-max) */}
-              <div className="grid min-h-0 flex-1 content-start items-start auto-rows-max grid-cols-2 gap-3 overflow-y-auto px-0.5 pt-1 pb-3 pr-1.5 sm:grid-cols-3 xl:grid-cols-4">
-                {filteredMenuItems.map((item, idx) => {
+              {/* Loyverse 5-Column Square Item Tiles Grid (Fits all 17 items on iPad landscape) */}
+              <div className="grid min-h-0 flex-1 content-start items-start auto-rows-max grid-cols-2 gap-2.5 overflow-y-auto p-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+                {filteredMenuItems.map((item) => {
                   const isAnimating = animatingItemCode === item.code;
-                  const itemSweet =
-                    itemSweetnessMap[item.code] ?? selectedSweetness;
-                  const itemAddon = itemAddonMap[item.code] ?? selectedAddonId;
                   const qtyInCart = cartLines
                     .filter((l) => l.itemCode === item.code)
                     .reduce((acc, l) => addDec(acc, l.qty), "0");
                   const hasInCart = cmpDec(qtyInCart, "0") > 0;
-                  const imgSrc = item.imageUrl || `/products/${item.code}.jpg`;
-                  const isPrimaryOptionHost =
-                    item.code === "CF-AME-C" ||
-                    (idx === 0 &&
-                      !filteredMenuItems.some(
-                        (m) => m.code === "CF-AME-C",
-                      ));
 
                   return (
-                    <div
+                    <ItemTile
                       key={item.code}
-                      style={{ "--i": idx } as React.CSSProperties}
-                      className={`dp-stagger dp-lift group relative flex flex-col overflow-hidden rounded-2xl border bg-white text-left shadow-[0_1px_2px_rgba(42,31,24,0.05),0_8px_20px_-12px_rgba(42,31,24,0.2)] ${
-                        isAnimating
-                          ? "dp-card-hit scale-[1.03] border-[#0F9D6B]"
-                          : hasInCart
-                            ? "border-[#B5651D]/70 ring-1 ring-[#B5651D]/30"
-                            : "border-[#EBE0D3] hover:border-[#D4823A]/60"
-                      }`}
-                    >
-                      {/* Floating +1 ⚡ Badge Animation เหมือน SML Ai Account POS */}
-                      {isAnimating && (
-                        <div className="dp-plus-one pointer-events-none absolute top-2 right-2 z-20 rounded-full bg-gradient-to-b from-[#19B47C] to-[#0B7A53] px-2.5 py-0.5 text-[11px] font-extrabold text-white shadow-[0_6px_14px_-4px_rgba(15,157,107,0.8)]">
-                          +1 ⚡
-                        </div>
-                      )}
-
-                      {/* ป้ายจำนวนในตะกร้ามุมขวาบน */}
-                      {hasInCart && !isAnimating && (
-                        <div key={qtyInCart} className="dp-pop pointer-events-none absolute top-2 right-2 z-10 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-gradient-to-b from-[#D4823A] to-[#8F4C10] px-1.5 font-mono text-[11px] font-extrabold text-white shadow-[0_4px_10px_-2px_rgba(143,76,16,0.6)] ring-2 ring-white">
-                          {qtyInCart}
-                        </div>
-                      )}
-
-                      {/* พื้นที่คลิกสั่งสินค้าพร้อมรูปภาพทุกเมนู */}
-                      <button
-                        type="button"
-                        data-testid={`pos-starter-item-${item.code}`}
-                        onClick={() => handleAddItemToCart(item)}
-                        className="flex flex-col text-left focus:outline-none"
-                      >
-                        <div className="relative h-32 w-full shrink-0 overflow-hidden bg-[#F5EDE2]">
-                          <img
-                            src={imgSrc}
-                            alt={item.name}
-                            data-testid={`pos-starter-img-${item.code}`}
-                            onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).src =
-                                "/products/CAFE-ESP-01.jpg";
-                            }}
-                            className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
-                          />
-                          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/10" />
-                          <div className="absolute top-2 left-2 flex items-center gap-1">
-                            <span className="rounded-md bg-black/45 px-1.5 py-0.5 font-mono text-[10px] font-bold text-white/95 backdrop-blur-sm">
-                              {item.code}
-                            </span>
-                            {item.badge && (
-                              <span className="rounded-md bg-gradient-to-r from-[#E9BC74] to-[#D4823A] px-1.5 py-0.5 text-[10px] font-extrabold text-[#2A1F18] shadow-[0_2px_6px_rgba(0,0,0,0.25)]">
-                                {item.badge}
-                              </span>
-                            )}
-                          </div>
-                          <div className="absolute right-2 bottom-2 rounded-full bg-white/95 px-2.5 py-0.5 font-mono text-xs font-extrabold text-[#8F4C10] shadow-[0_4px_12px_-2px_rgba(0,0,0,0.35)] backdrop-blur transition-transform duration-300 group-hover:-translate-y-0.5">
-                            ฿{formatMoney(item.price, 2)}
-                          </div>
-                        </div>
-
-                        <div className="px-3 pt-2.5 pb-2">
-                          <div className="line-clamp-1 text-[13px] font-bold text-[#2A1F18] transition-colors group-hover:text-[#B5651D]">
-                            {item.name}
-                          </div>
-                          <div className="truncate text-[10px] text-[#A08C79]">
-                            {item.nameEn} · ต่อ{item.unit}
-                          </div>
-                        </div>
-                      </button>
-
-                      {/* ตัวเลือกเฉพาะสินค้า (Option อยู่ที่ตัวสินค้าเฉพาะเมนูเครื่องดื่ม/เบียร์) */}
-                      {(item.supportsSweetness || item.supportsBeerServe) && (
-                        <div
-                          className="border-t border-[#F1E8DC] bg-[#FBF7F1] px-2.5 py-2"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {item.supportsSweetness && (
-                            <div className="mb-1 flex flex-wrap items-center gap-0.5">
-                              {SWEETNESS_OPTIONS.map((sw) => (
-                                <button
-                                  key={sw.id}
-                                  type="button"
-                                  data-testid={
-                                    isPrimaryOptionHost
-                                      ? `pos-starter-sweet-${sw.id}`
-                                      : `pos-item-sweet-${item.code}-${sw.id}`
-                                  }
-                                  onClick={() => {
-                                    setSelectedSweetness(sw.id);
-                                    setItemSweetnessMap((p) => ({
-                                      ...p,
-                                      [item.code]: sw.id,
-                                    }));
-                                  }}
-                                  className={`rounded-full px-2 py-1 text-[10px] font-bold leading-none ${
-                                    itemSweet === sw.id ? "dp-chip-active" : "dp-chip"
-                                  }`}
-                                >
-                                  {sw.id.replace("หวาน ", "")}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-
-                          <select
-                            aria-label={`ตัวเลือกเสริม ${item.name}`}
-                            data-testid={
-                              isPrimaryOptionHost
-                                ? "pos-starter-addon-select"
-                                : `pos-item-addon-${item.code}`
-                            }
-                            value={itemAddon}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setSelectedAddonId(val);
-                              setItemAddonMap((p) => ({
-                                ...p,
-                                [item.code]: val,
-                              }));
-                            }}
-                            className="dp-input h-7 w-full cursor-pointer rounded-lg px-2 text-[10px] font-bold text-[#4A3B30]"
-                          >
-                            {ADDON_OPTIONS.map((ad) => (
-                              <option key={ad.id} value={ad.id}>
-                                {ad.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                    </div>
+                      item={item}
+                      qtyInCart={qtyInCart}
+                      hasInCart={hasInCart}
+                      isAnimating={isAnimating}
+                      onSelect={handleAddItemToCart}
+                    />
                   );
                 })}
               </div>
             </div>
 
-            {/* ฝั่งขวา (42%): CartPanel เต็มความสูงแบบ SML Ai Account POS ปกติ */}
-            <div className="flex w-full shrink-0 flex-col border-l border-[#EBE0D3] bg-white shadow-[-12px_0_32px_-20px_rgba(42,31,24,0.35)] lg:w-[42%]">
-              {/* 1. แถบหัวตะกร้าสี Terracotta (#B5651D) แบบ SML POS */}
-              <div className="flex h-12 shrink-0 items-center justify-between bg-gradient-to-r from-[#8F4C10] via-[#B5651D] to-[#D4823A] px-3.5 text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.15)]">
-                <div className="flex items-center gap-2">
-                  <Receipt className="size-4 text-[#FCE7C8]" />
-                  <span className="font-mono text-xs font-extrabold">
-                    #POS-{String(queueCounter).padStart(3, "0")}
-                  </span>
-                  <span className="rounded-full bg-black/20 px-2.5 py-0.5 text-[11px] font-bold text-[#FCE7C8] ring-1 ring-white/20">
-                    {serviceChannel === "DINE_IN"
-                      ? `โต๊ะ ${selectedTableId}`
-                      : serviceChannel === "TAKEAWAY"
-                        ? "กลับบ้าน"
-                        : "เดลิเวอรี่"}
-                  </span>
-                  <span className="hidden rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] font-semibold ring-1 ring-white/15 sm:inline">
-                    👤 {shiftStatus.cashierCode}
-                  </span>
-                </div>
-                {cartLines.length > 0 && (
-                  <button
-                    type="button"
-                    data-testid="pos-starter-clear-cart-btn"
-                    onClick={() => {
-                      playPosSound("delete");
-                      setCartLines([]);
-                    }}
-                    className="dp-pop inline-flex h-7 items-center gap-1 rounded-full bg-white/15 px-3 text-[11px] font-bold text-white ring-1 ring-white/25 transition hover:bg-rose-600 hover:ring-rose-400"
-                  >
-                    <Trash2 className="size-3" />
-                    <span>ล้างตะกร้า</span>
-                  </button>
-                )}
-              </div>
-
-              {/* 2. หัวตารางรายการสินค้า (#F5EDE2) */}
-              <div className="grid shrink-0 grid-cols-12 border-b border-[#EBE0D3] bg-[#F5EDE2] px-3.5 py-2 text-[11px] font-bold tracking-wide text-[#6B5848]">
-                <div className="col-span-6">รายการสินค้า ({cartLines.length})</div>
-                <div className="col-span-3 text-center">จำนวน</div>
-                <div className="col-span-3 text-right">ราคารวม</div>
-              </div>
-
-              {/* 3. รายการสินค้าในตะกร้า (คลิกเพื่อกางปุ่มคำสั่งและแก้ไข Option เฉพาะรายการแบบ SML POS) */}
-              <div className="min-h-0 flex-1 divide-y divide-[#F1E8DC] overflow-y-auto bg-white">
-                {cartLines.length === 0 ? (
-                  <div className="dp-enter flex h-56 flex-col items-center justify-center p-4 text-center text-xs text-[#A08C79]">
-                    <div className="mb-3 flex size-16 items-center justify-center rounded-full bg-gradient-to-br from-[#FBF7F1] to-[#F5EDE2] shadow-[inset_0_2px_6px_rgba(42,31,24,0.08)]">
-                      <Coffee className="size-8 animate-pulse text-[#D4823A]" />
-                    </div>
-                    <span className="text-sm font-bold text-[#4A3B30]">
-                      ยังไม่มีรายการสินค้าในบิล
-                    </span>
-                    <span className="mt-0.5 text-[11px]">
-                      คลิกการ์ดรูปสินค้าทางซ้าย หรือสแกนบาร์โค้ดเพื่อเริ่มขาย
-                    </span>
-                  </div>
-                ) : (
-                  cartLines.map((line, index) => {
-                    const lineTotal = mulDec(line.qty, line.unitPrice);
-                    const isExpanded = expandedLineId === line.lineId;
-                    const lineImg = `/products/${line.itemCode}.jpg`;
-                    const isDrinkOrBeer =
-                      line.category === "COFFEE" ||
-                      line.category === "NON_COFFEE" ||
-                      line.category === "STUDIO";
-
-                    return (
-                      <div
-                        key={line.lineId}
-                        onClick={() =>
-                          setExpandedLineId(isExpanded ? null : line.lineId)
-                        }
-                        className={`dp-slide-in cursor-pointer px-3.5 py-2.5 transition-colors duration-200 ${
-                          isExpanded
-                            ? "bg-gradient-to-r from-[#FFF6EA] to-white shadow-[inset_3px_0_0_#B5651D]"
-                            : "hover:bg-[#FBF7F1]"
-                        }`}
-                      >
-                        <div className="grid grid-cols-12 items-center gap-1.5">
-                          <div className="col-span-6 flex items-center gap-2 min-w-0">
-                            <img
-                              src={lineImg}
-                              alt={line.name}
-                              onError={(e) => {
-                                (e.currentTarget as HTMLImageElement).src =
-                                  "/products/CAFE-ESP-01.jpg";
-                              }}
-                              className="size-10 shrink-0 rounded-xl object-cover shadow-[0_3px_8px_-3px_rgba(42,31,24,0.4)] ring-1 ring-[#EBE0D3]"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-xs font-bold text-[#2A1F18]">
-                                {index + 1}. {line.name}
-                              </div>
-                              <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-[#85725F]">
-                                <span className="font-mono">
-                                  @{formatMoney(line.unitPrice, 2)}/{line.unitCode}
-                                </span>
-                                {line.sweetness && (
-                                  <span className="rounded-full bg-[#B5651D]/12 px-1.5 py-px font-bold text-[#8F4C10]">
-                                    {line.sweetness}
-                                  </span>
-                                )}
-                                {line.addonLabel && (
-                                  <span className="rounded-full bg-[#0F9D6B]/12 px-1.5 py-px font-bold text-[#0B7A53]">
-                                    {line.addonLabel}
-                                  </span>
-                                )}
-                                {line.note && (
-                                  <span className="text-[#B5651D]">
-                                    ({line.note})
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div
-                            className="col-span-3 flex items-center justify-center gap-1"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleAdjustLineQty(line.lineId, "-1")
-                              }
-                              className="dp-btn-ghost inline-flex size-7 items-center justify-center rounded-full text-sm font-extrabold"
-                            >
-                              -
-                            </button>
-                            <span key={line.qty} className="dp-bump inline-block min-w-6 text-center font-mono text-xs font-extrabold text-[#2A1F18]">
-                              {line.qty}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleAdjustLineQty(line.lineId, "1")
-                              }
-                              className="dp-btn-primary inline-flex size-7 items-center justify-center rounded-full text-sm font-extrabold"
-                            >
-                              +
-                            </button>
-                          </div>
-
-                          <div className="col-span-3 flex items-center justify-end gap-1.5">
-                            <span key={lineTotal} className="dp-bump inline-block font-mono text-xs font-extrabold text-[#8F4C10]">
-                              {formatMoney(lineTotal, 2)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                playPosSound("delete");
-                                handleRemoveLine(line.lineId);
-                              }}
-                              className="inline-flex size-7 items-center justify-center rounded-full text-[#C2410C]/70 transition hover:bg-rose-50 hover:text-rose-600"
-                              title="ลบรายการ"
-                            >
-                              <Trash2 className="size-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* แถบตัวเลือกเฉพาะสินค้า (Item-Specific Option & Action Bar เมื่อคลิกที่แถว) */}
-                        {isExpanded && isDrinkOrBeer && (
-                          <div
-                            className="dp-expand mt-2 rounded-xl border border-[#EBE0D3] bg-white p-2.5 text-[11px] shadow-[0_6px_16px_-10px_rgba(42,31,24,0.35)]"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {(line.category === "COFFEE" ||
-                              line.category === "NON_COFFEE") && (
-                              <div className="mb-1.5 flex flex-wrap items-center gap-1">
-                                <span className="font-bold text-[#8F4C10]">
-                                  ความหวาน:
-                                </span>
-                                {SWEETNESS_OPTIONS.map((sw) => (
-                                  <button
-                                    key={sw.id}
-                                    type="button"
-                                    onClick={() =>
-                                      handleUpdateLineOption(line.lineId, {
-                                        sweetness: sw.id,
-                                      })
-                                    }
-                                    className={`rounded-full px-2.5 py-1 text-[10px] font-bold leading-none ${
-                                      line.sweetness === sw.id ? "dp-chip-active" : "dp-chip"
-                                    }`}
-                                  >
-                                    {sw.id}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                            <div className="flex items-center gap-1.5">
-                              <span className="shrink-0 font-bold text-[#8F4C10]">
-                                ตัวเลือกเสริม:
-                              </span>
-                              <select
-                                aria-label="แก้ไขตัวเลือกเสริมในตะกร้า"
-                                value={
-                                  ADDON_OPTIONS.find(
-                                    (a) => a.label === line.addonLabel,
-                                  )?.id ?? "NONE"
-                                }
-                                onChange={(e) =>
-                                  handleUpdateLineOption(line.lineId, {
-                                    addonId: e.target.value,
-                                  })
-                                }
-                                className="dp-input h-7 flex-1 cursor-pointer rounded-lg px-2 text-[11px] font-bold text-[#2A1F18]"
-                              >
-                                {ADDON_OPTIONS.map((ad) => (
-                                  <option key={ad.id} value={ad.id}>
-                                    {ad.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* 4. แถบโปรโมชัน & สะสมแต้ม ThaiFi Custody Wallet สีเขียวอ่อน (#ECFDF5) แบบ SML POS */}
-              <div
-                data-testid="pos-starter-wallet-card"
-                className="flex shrink-0 flex-wrap items-center justify-between gap-1.5 border-y border-[#BFEBD8] bg-gradient-to-r from-[#ECFDF5] via-[#F3FCF8] to-[#ECFDF5] px-3.5 py-2 text-[11px]"
-              >
-                <div className="flex items-center gap-1.5">
-                  <Sparkles className="size-3.5 shrink-0 animate-pulse text-[#0F9D6B]" />
-                  <span
-                    data-testid="pos-starter-wallet-auto-point-badge"
-                    className="font-bold text-[#065F46]"
-                  >
-                    สะสมแต้ม Wallet: ครบทุก 100 ฿ รับ 1 Point (บิลนี้ +
-                    {(parseScaled(cartNetTotal) / parseScaled("100")).toString()}{" "}
-                    Point)
-                  </span>
-                </div>
-                <span
-                  data-testid="pos-starter-wallet-balance"
-                  className="font-mono font-bold text-[#047857]"
-                >
-                  คงเหลือ:{" "}
-                  {formatMoneyBlankZero(walletSummary.custBalance) || "0.00"}{" "}
-                  {walletSummary.tokenSymbol}
-                </span>
-              </div>
-
-              {/* 5. ส่วนสรุปยอด + ช่องทางชำระเงิน + ปุ่มชำระเงินเขียวไล่เฉด (dp-pay) + ปุ่มคำสั่งล่าง 8 ปุ่ม */}
-              <div className="shrink-0 space-y-2 bg-gradient-to-b from-[#FBF7F1] to-[#F5EDE2] p-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="dp-input flex h-8 items-center gap-1.5 rounded-xl px-2.5">
-                    <span className="shrink-0 text-[11px] font-bold text-[#85725F]">
-                      ส่วนลด (฿):
-                    </span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      aria-label="ส่วนลดท้ายบิล"
-                      value={
-                        cmpDec(discountInput || "0", "0") === 0
-                          ? ""
-                          : discountInput
-                      }
-                      onChange={(e) =>
-                        setDiscountInput(sanitizeNumericInput(e.target.value))
-                      }
-                      placeholder=""
-                      className="h-5 w-full bg-transparent text-right font-mono text-xs font-bold text-[#8F4C10] outline-none"
-                    />
-                  </div>
-                  <div className="dp-input flex h-8 items-center gap-1.5 rounded-xl px-2.5">
-                    <input
-                      type="text"
-                      value={orderRemark}
-                      onChange={(e) => setOrderRemark(e.target.value)}
-                      placeholder="หมายเหตุท้ายบิล (เช่น แยกน้ำแข็ง)..."
-                      className="h-5 w-full bg-transparent text-xs text-[#2A1F18] placeholder-[#A08C79] outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* เลือกวิธีรับชำระเงิน (เงินสด / QR / โอน / บัตร / จ่ายด้วย Wallet) */}
-                <div className="grid grid-cols-5 gap-1">
-                  {(
-                    [
-                      { code: "CASH", label: "เงินสด", Icon: Wallet },
-                      { code: "PROMPTPAY", label: "QR พร้อมเพย์", Icon: QrCode },
-                      { code: "TRANSFER", label: "โอนเงิน", Icon: CreditCard },
-                      { code: "CARD", label: "บัตรเครดิต", Icon: CreditCard },
-                      { code: "WALLET", label: "จ่ายด้วย Wallet", Icon: Sparkles },
-                    ] as {
-                      code: PaymentMethodCode;
-                      label: string;
-                      Icon: typeof Wallet;
-                    }[]
-                  ).map((pm) => (
-                    <button
-                      key={pm.code}
-                      type="button"
-                      data-testid={`pos-starter-paymethod-${pm.code.toLowerCase()}`}
-                      onClick={() => setPaymentMethod(pm.code)}
-                      className={`inline-flex h-9 items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-bold leading-none ${
-                        paymentMethod === pm.code ? "dp-chip-active" : "dp-chip"
-                      }`}
-                    >
-                      <pm.Icon className="size-3.5 shrink-0" />
-                      <span className="truncate">{pm.label}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* กรณีรับเงินสด: ช่องรับเงิน + ปุ่มธนบัตรด่วน + เงินทอน */}
-                {paymentMethod === "CASH" && (
-                  <div className="dp-expand flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-[#EBE0D3] bg-white px-2.5 py-1.5 shadow-[0_1px_2px_rgba(42,31,24,0.05)]">
-                    <div className="flex items-center gap-1">
-                      <span className="text-[11px] font-bold text-[#85725F]">
-                        รับเงินสด:
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        aria-label="จำนวนเงินสดที่รับมา"
-                        value={
-                          cmpDec(cashReceivedInput || "0", "0") === 0
-                            ? ""
-                            : cashReceivedInput
-                        }
-                        onChange={(e) =>
-                          setCashReceivedInput(
-                            sanitizeNumericInput(e.target.value),
-                          )
-                        }
-                        placeholder={formatMoneyBlankZero(cartNetTotal)}
-                        className="dp-input h-7 w-24 rounded-lg bg-[#FBF7F1] px-2 text-right font-mono text-xs font-bold text-[#2A1F18]"
-                      />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {["100", "500", "1000"].map((bill) => (
-                        <button
-                          key={bill}
-                          type="button"
-                          onClick={() => setCashReceivedInput(bill)}
-                          className="dp-chip inline-flex h-7 items-center rounded-full px-2.5 font-mono text-[11px] font-bold hover:bg-[#B5651D] hover:text-white"
-                        >
-                          {bill}
-                        </button>
-                      ))}
-                    </div>
-                    <div key={cashChangeAmount} className="dp-bump text-right text-xs font-extrabold text-[#0B7A53]">
-                      ทอน: {formatMoneyBlankZero(cashChangeAmount) || "-"}
-                    </div>
-                  </div>
-                )}
-
-                {/* ปุ่มชำระเงินเขียวไล่เฉด + แสงวิ่ง (dp-pay) + ยอดสุทธิ */}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    ref={payButtonRef}
-                    data-testid="pos-starter-confirm-pay-btn"
-                    onClick={() => {
-                      playPosSound("chaching");
-                      void handleCheckoutAndSaveBill();
-                    }}
-                    disabled={cartLines.length === 0 || submittingBill}
-                    className={`dp-pay flex h-14 flex-1 items-center justify-between rounded-2xl px-4 text-white disabled:opacity-40 disabled:saturate-50 ${
-                      payPulse ? "dp-bump ring-4 ring-[#0F9D6B]/30" : ""
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
-                        <Printer className="size-5" />
-                      </span>
-                      <div className="text-left">
-                        <div
-                          className="text-xs font-extrabold leading-tight"
-                          data-testid="pos-starter-pay-submit-btn"
-                        >
-                          {submittingBill
-                            ? "กำลังบันทึกบิล..."
-                            : "ชำระเงิน & พิมพ์ใบเสร็จ (F9)"}
-                        </div>
-                        <div className="text-[10px] text-emerald-50/85">
-                          รวม VAT 7% · บันทึกลง Firebase Firestore
-                        </div>
-                      </div>
-                    </div>
-                    <div
-                      key={cartNetTotal}
-                      className="dp-bump font-mono text-2xl font-extrabold tracking-tight text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.25)]"
-                      data-testid="pos-starter-net-total"
-                    >
-                      {formatMoneyBlankZero(cartNetTotal) || "0.00"} ฿
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      speak(
-                        `ยอดชำระสุทธิ ${formatMoney(cartNetTotal, 2)} บาท ค่ะ`,
-                      )
-                    }
-                    className="dp-btn-ghost inline-flex h-14 w-12 shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl text-[#B5651D]"
-                    title="พูดยอดชำระ"
-                  >
-                    <Volume2 className="size-4" />
-                    <span className="text-[9px] font-bold">พูดยอด</span>
-                  </button>
-                </div>
-
-                {/* แผงปุ่มคำสั่งล่าง (SML POS Bottom Command Grid) */}
-                <div className="grid grid-cols-3 gap-1.5">
-                  <button
-                    type="button"
-                    data-testid="pos-starter-quick-cash-btn"
-                    onClick={() => {
-                      playPosSound("chaching");
-                      handleQuickExactCashCheckout();
-                    }}
-                    disabled={cartLines.length === 0 || submittingBill}
-                    className="dp-btn-primary inline-flex h-9 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-extrabold disabled:opacity-40"
-                  >
-                    <Zap className="size-3.5 shrink-0" />
-                    <span>ขายด่วนเงินสดพอดี</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    data-testid="pos-starter-hold-btn"
-                    onClick={handleHoldOrderToTable}
-                    disabled={cartLines.length === 0}
-                    className="dp-btn-ghost inline-flex h-9 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-bold disabled:opacity-40"
-                  >
-                    <PauseCircle className="size-3.5 shrink-0 text-[#B5651D]" />
-                    <span data-testid="pos-starter-hold-table-btn">
-                      พักบิลเข้าโต๊ะ/บาร์
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("manage")}
-                    className="dp-btn-ghost inline-flex h-9 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-bold"
-                  >
-                    <Cloud className="size-3.5 shrink-0 text-[#B5651D]" />
-                    <span>จัดการสินค้า/Firebase</span>
-                  </button>
-                </div>
-              </div>
-            </div>
+            {/* Right Panel: Loyverse Ticket Panel */}
+            <TicketPanel
+              queueCounter={queueCounter}
+              serviceChannel={serviceChannel}
+              onSelectChannel={setServiceChannel}
+              selectedTableId={selectedTableId}
+              onSelectTable={setSelectedTableId}
+              tables={INITIAL_TABLES}
+              heldTables={heldTables}
+              cashierCode={shiftStatus.cashierCode}
+              cartLines={cartLines}
+              onClearCart={() => {
+                playPosSound("delete");
+                setCartLines([]);
+              }}
+              onOpenLineEdit={(lineId) => {
+                setExpandedLineId(lineId);
+                setEditingLineId(lineId);
+              }}
+              onAdjustLineQty={handleAdjustLineQty}
+              onRemoveLine={(lineId) => {
+                playPosSound("delete");
+                handleRemoveLine(lineId);
+              }}
+              discountInput={discountInput}
+              onDiscountChange={(val) =>
+                setDiscountInput(sanitizeNumericInput(val))
+              }
+              orderRemark={orderRemark}
+              onRemarkChange={setOrderRemark}
+              paymentMethod={paymentMethod}
+              onSelectPaymentMethod={setPaymentMethod}
+              cartSubtotal={cartSubtotal}
+              validDiscount={validDiscount}
+              cartNetTotal={cartNetTotal}
+              walletSummary={walletSummary}
+              submittingBill={submittingBill}
+              chargeDialogOpen={chargeOpen}
+              payButtonRef={payButtonRef}
+              onOpenChargeScreen={() => setChargeOpen(true)}
+              onQuickExactCash={() => {
+                playPosSound("chaching");
+                handleQuickExactCashCheckout();
+              }}
+              onHoldOrder={handleHoldOrderToTable}
+              onSpeakTotal={() =>
+                speak(`ยอดชำระสุทธิ ${formatMoney(cartNetTotal, 2)} บาท ค่ะ`)
+              }
+            />
           </div>
         )}
 
-        {/* แท็บที่ 2: ผังโต๊ะคาเฟ่ & แท็บบาร์เบียร์ (Table & Bar Tab Map) */}
+        {/* TAB 2: ตั๋วเปิด / ผังโต๊ะ (Loyverse Open Tickets View) */}
         {activeTab === "tables" && (
           <div
-            className="dp-enter flex h-full w-full flex-col overflow-y-auto p-5"
+            className="dp-enter flex h-full w-full flex-col overflow-y-auto bg-[#f5f5f5] p-4"
             data-testid="pos-starter-tables-view"
           >
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-[#e0e0e0] bg-white p-3.5 rounded-[6px]">
               <div>
                 <h2 className="dp-title text-base">
-                  ผังโซน Entrance Creative Space · ชั้น 1 Cafe & ชั้น 2 ห้องซ้อมดนตรี In-Ear
+                  ตั๋วเปิดตามโต๊ะ & ห้องซ้อม (Open Tickets)
                 </h2>
                 <p className="dp-subtitle text-xs">
-                  คลิกที่โต๊ะหรือห้องซ้อมเพื่อดึงรายการกลับมาสั่งเพิ่ม หรือกดเช็คบิลออกใบเสร็จรับเงินทันที
+                  แตะที่โต๊ะหรือห้องซ้อมเพื่อดึงบิลกลับมาสั่งเพิ่มหรือรับชำระเงิน
                 </p>
               </div>
-              <div className="flex items-center gap-3 text-xs font-bold">
-                <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-emerald-700">
-                  <span className="dp-live size-2.5 rounded-full bg-emerald-500" />
-                  โต๊ะว่าง ({INITIAL_TABLES.length - occupiedTableCount})
+              <div className="flex items-center gap-2 text-xs font-bold">
+                <span className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#e0e0e0] bg-white px-3 text-[#212121]">
+                  <span className="size-2.5 rounded-full bg-[#2fa84f]" />
+                  ว่าง ({INITIAL_TABLES.length - occupiedTableCount})
                 </span>
-                <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#E9BC74]/70 bg-[#FFF6EA] px-3 text-[#8F4C10]">
-                  <span className="size-2.5 rounded-full bg-[#D4823A]" />
-                  เปิดบิลค้างอยู่ ({occupiedTableCount})
+                <span className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#f9a825] bg-amber-50 px-3 text-[#212121]">
+                  <span className="size-2.5 rounded-full bg-[#f9a825]" />
+                  มีตั๋วเปิดค้าง ({occupiedTableCount})
                 </span>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {INITIAL_TABLES.map((tb, tbIdx) => {
-                const held = heldTables[tb.tableId];
-                const tableSum = held
-                  ? held.lines.reduce(
-                      (acc, l) => addDec(acc, mulDec(l.qty, l.unitPrice)),
-                      "0.00",
-                    )
-                  : "0.00";
+            {(
+              [
+                {
+                  zone: "CAFE_F1",
+                  title: "ชั้น 1 · โซน Cafe (โต๊ะ C1–C4)",
+                },
+                {
+                  zone: "STUDIO_F2",
+                  title: "ชั้น 2 · ห้องซ้อมดนตรี In-Ear Monitor (S1–S2)",
+                },
+              ] as const
+            ).map((section) => (
+              <div key={section.zone} className="mb-5">
+                <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-[#757575]">
+                  {section.title}
+                </h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {INITIAL_TABLES.filter((t) => t.zone === section.zone).map(
+                    (tb) => {
+                      const held = heldTables[tb.tableId];
+                      const tableSum = held
+                        ? held.lines.reduce(
+                            (acc, l) => addDec(acc, mulDec(l.qty, l.unitPrice)),
+                            "0.00",
+                          )
+                        : "0.00";
+                      return (
+                        <div
+                          key={tb.tableId}
+                          data-testid={`pos-starter-table-card-${tb.tableId}`}
+                          onClick={() => handleRecallTableToCashier(tb.tableId)}
+                          className={`dp-surface flex cursor-pointer flex-col justify-between overflow-hidden transition hover:border-[#2fa84f] ${
+                            held ? "border-[#f9a825]" : ""
+                          }`}
+                        >
+                          <div>
+                            <div
+                              className={`h-1.5 w-full ${
+                                held ? "bg-[#f9a825]" : "bg-[#2fa84f]"
+                              }`}
+                            />
+                            <div className="p-3.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="rounded bg-[#f5f5f5] px-2 py-0.5 text-[11px] font-bold text-[#757575]">
+                                  {tb.tableId} · {tb.seats} ที่นั่ง
+                                </span>
+                                <span
+                                  className={`rounded px-2 py-0.5 text-[11px] font-bold ${
+                                    held
+                                      ? "bg-[#f9a825] text-[#212121]"
+                                      : "bg-[#e8f5ec] text-[#23863e]"
+                                  }`}
+                                >
+                                  {held ? `เปิด ${held.openedAt} น.` : "ว่าง"}
+                                </span>
+                              </div>
+
+                              <div className="mt-2 text-sm font-bold text-[#212121]">
+                                {tb.tableName}
+                              </div>
+
+                              {held ? (
+                                <div className="mt-2.5 space-y-1 rounded-[4px] border border-[#e0e0e0] bg-[#fafafa] p-2 text-xs">
+                                  {held.lines.map((l) => (
+                                    <div
+                                      key={l.lineId}
+                                      className="flex items-center justify-between text-[#212121]"
+                                    >
+                                      <span className="truncate">
+                                        {l.qty}× {l.name}
+                                      </span>
+                                      <span className="font-mono font-semibold">
+                                        {formatMoney(
+                                          mulDec(l.qty, l.unitPrice),
+                                          2,
+                                        )}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="mt-2.5 text-xs text-[#757575]">
+                                  ไม่มีตั๋วเปิดค้างในโต๊ะนี้
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between border-t border-[#e0e0e0] bg-[#fafafa] px-3.5 py-2.5">
+                            <div className="font-mono text-sm font-extrabold text-[#212121]">
+                              {held ? `฿${formatMoney(tableSum, 2)}` : "฿0.00"}
+                            </div>
+                            <button
+                              type="button"
+                              data-testid={`pos-starter-recall-${tb.tableId}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRecallTableToCashier(tb.tableId);
+                              }}
+                              className={`inline-flex h-8 items-center gap-1 rounded-[4px] px-3 text-xs font-bold ${
+                                held ? "dp-btn-primary" : "dp-btn-ghost"
+                              }`}
+                            >
+                              <Plus className="size-3.5" />
+                              <span>
+                                {held ? "ดึงตั๋ว / เช็คบิล" : "เปิดตั๋ว"}
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    },
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* TAB 3: จอคิวบาริสต้า (Loyverse Dark Kitchen Display System — KDS) */}
+        {activeTab === "kds" && (
+          <div
+            className="dp-enter flex h-full w-full flex-col overflow-y-auto bg-[#1b1d1f] p-4 text-white"
+            data-testid="pos-starter-kds-view"
+          >
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-[6px] border border-white/10 bg-[#26292c] px-4 py-3">
+              <div>
+                <h2 className="text-base font-bold text-white">
+                  จอคิวบาริสต้า & ห้องซ้อมดนตรี (Kitchen Display — KDS)
+                </h2>
+                <p className="text-xs text-white/70">
+                  โหมดพื้นหลังมืดลดแสงจ้าหลังบาร์ · แตะที่การ์ดเพื่อเปลี่ยนสถานะและเรียกคิวเสียงภาษาไทย
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-bold">
+                <span className="inline-flex h-8 items-center gap-1.5 rounded-[4px] bg-[#f9a825] px-3 text-[#212121]">
+                  กำลังทำ (
+                  {kdsQueue.filter((q) => q.status === "PREPARING").length})
+                </span>
+                <span className="inline-flex h-8 items-center gap-1.5 rounded-[4px] bg-[#2fa84f] px-3 text-white">
+                  พร้อมเสิร์ฟ (
+                  {kdsQueue.filter((q) => q.status === "READY").length})
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {kdsQueue.map((q) => {
+                const headerBg =
+                  q.status === "PREPARING"
+                    ? "bg-[#f9a825] text-[#212121]"
+                    : q.status === "READY"
+                      ? "bg-[#2fa84f] text-white"
+                      : "bg-[#424242] text-white/75";
                 return (
                   <div
-                    key={tb.tableId}
-                    data-testid={`pos-starter-table-card-${tb.tableId}`}
-                    style={{ "--i": tbIdx } as React.CSSProperties}
-                    className={`dp-stagger dp-lift flex flex-col justify-between rounded-2xl border p-4 ${
-                      held
-                        ? "border-[#E9BC74] bg-gradient-to-br from-[#FFF1DC] via-[#FFF9F0] to-white shadow-[0_10px_28px_-14px_rgba(181,101,29,0.55)]"
-                        : "border-[#EBE0D3] bg-white shadow-[0_1px_2px_rgba(42,31,24,0.05),0_8px_20px_-14px_rgba(42,31,24,0.25)]"
+                    key={`${q.queueNo}-${q.docNo}`}
+                    data-testid={`pos-starter-kds-card-${q.queueNo}`}
+                    className={`flex flex-col justify-between overflow-hidden rounded-[6px] border border-white/15 bg-[#26292c] ${
+                      q.status === "SERVED" ? "opacity-60" : ""
                     }`}
                   >
                     <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="rounded-full bg-[#F5EDE2] px-2.5 py-0.5 text-[11px] font-bold text-[#6B5848]">
-                          {tb.zoneLabel} · {tb.seats} ที่นั่ง
-                        </span>
-                        <span
-                          className={`rounded-full px-2.5 py-0.5 text-[11px] font-extrabold ${
-                            held
-                              ? "dp-pop bg-gradient-to-r from-[#E9BC74] to-[#D4823A] text-[#2A1F18] shadow-[0_3px_8px_-3px_rgba(181,101,29,0.7)]"
-                              : "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                          }`}
-                        >
-                          {held ? `เปิดโต๊ะ ${held.openedAt} น.` : "ว่างพร้อมรับลูกค้า"}
+                      {/* Loyverse KDS Colored Ticket Header */}
+                      <div
+                        className={`flex items-center justify-between px-3.5 py-2.5 ${headerBg}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-black/20 px-2 py-0.5 font-mono text-sm font-extrabold">
+                            {q.queueNo}
+                          </span>
+                          <div>
+                            <div className="text-xs font-extrabold">
+                              {q.tableLabel}
+                            </div>
+                            <div className="text-[10px] opacity-80">
+                              {q.docNo} · {q.createdAt} น.
+                            </div>
+                          </div>
+                        </div>
+                        <span className="rounded bg-black/20 px-2 py-0.5 text-[11px] font-bold">
+                          {q.status === "PREPARING"
+                            ? "กำลังทำ"
+                            : q.status === "READY"
+                              ? "พร้อมเสิร์ฟ"
+                              : "เสิร์ฟแล้ว"}
                         </span>
                       </div>
 
-                      <div className="mt-2.5 text-base font-extrabold text-[#2A1F18]">
-                        {tb.tableName}
-                      </div>
-
-                      {held ? (
-                        <div className="mt-2 space-y-1 rounded-xl bg-white/80 p-2.5 text-xs ring-1 ring-[#F1E8DC]">
-                          {held.lines.map((l) => (
-                            <div
-                              key={l.lineId}
-                              className="flex items-center justify-between text-[#4A3B30]"
-                            >
-                              <span className="truncate">
-                                {l.qty}x {l.name}
-                              </span>
-                              <span className="font-mono font-bold text-[#8F4C10]">
-                                {formatMoney(mulDec(l.qty, l.unitPrice), 2)}
+                      {/* Ticket Items */}
+                      <div className="divide-y divide-white/10 p-3.5">
+                        {q.items.map((it, idx) => (
+                          <div key={idx} className="py-2 first:pt-0 last:pb-0">
+                            <div className="flex items-center justify-between text-sm font-bold text-white">
+                              <span>{it.name}</span>
+                              <span className="rounded bg-white/10 px-2 py-0.5 font-mono text-xs text-[#f9a825]">
+                                × {it.qty} {it.unitCode}
                               </span>
                             </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="mt-3 text-xs text-[#A08C79]">
-                          ยังไม่มีออเดอร์ค้างในโต๊ะนี้
-                        </div>
-                      )}
+                            {it.modifierText && (
+                              <div className="mt-0.5 text-xs font-medium text-emerald-300">
+                                {it.modifierText}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
-                    <div className="mt-3 flex items-center justify-between border-t border-[#F1E8DC] pt-3">
-                      <div className="dp-money font-mono text-base font-extrabold">
-                        {held ? `฿${formatMoney(tableSum, 2)}` : "โต๊ะว่าง"}
-                      </div>
+                    {/* KDS Action Footer */}
+                    <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-[#1f2225] p-3">
                       <button
                         type="button"
-                        data-testid={`pos-starter-recall-${tb.tableId}`}
-                        onClick={() => handleRecallTableToCashier(tb.tableId)}
-                        className={`inline-flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-xs font-bold leading-none ${
-                          held ? "dp-btn-primary" : "dp-btn-ghost"
-                        }`}
+                        onClick={() =>
+                          speak(
+                            `หมายเลขคิว ${q.queueNo} ${q.tableLabel} เครื่องดื่มพร้อมเสิร์ฟแล้วค่ะ`,
+                          )
+                        }
+                        className="inline-flex h-9 items-center gap-1.5 rounded-[4px] border border-white/20 bg-white/10 px-3 text-xs font-bold text-white hover:bg-white/20"
                       >
-                        <Plus className="size-3.5" />
-                        <span>
-                          {held ? "ดึงบิล / เช็คบิล" : "เปิดโต๊ะสั่งอาหาร"}
-                        </span>
+                        <Volume2 className="size-3.5" />
+                        <span>เรียกคิว</span>
                       </button>
+
+                      <div className="flex items-center gap-1.5">
+                        {q.status === "PREPARING" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setKdsQueue((prev) =>
+                                prev.map((x) =>
+                                  x.queueNo === q.queueNo
+                                    ? { ...x, status: "READY" }
+                                    : x,
+                                ),
+                              );
+                              speak(
+                                `คิว ${q.queueNo} ชงเสร็จพร้อมเสิร์ฟแล้วค่ะ`,
+                              );
+                            }}
+                            className="inline-flex h-9 items-center gap-1 rounded-[4px] bg-[#f9a825] px-3 text-xs font-extrabold text-[#212121] hover:brightness-105"
+                          >
+                            <CheckCircle2 className="size-3.5" />
+                            <span>พร้อมเสิร์ฟ</span>
+                          </button>
+                        )}
+                        {q.status !== "SERVED" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setKdsQueue((prev) =>
+                                prev.map((x) =>
+                                  x.queueNo === q.queueNo
+                                    ? { ...x, status: "SERVED" }
+                                    : x,
+                                ),
+                              )
+                            }
+                            className="inline-flex h-9 items-center gap-1 rounded-[4px] bg-[#2fa84f] px-3 text-xs font-extrabold text-white hover:bg-[#23863e]"
+                          >
+                            <CheckCircle2 className="size-3.5" />
+                            <span>เสิร์ฟครบ</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -2867,175 +2411,21 @@ export function DomePosScreen({
           </div>
         )}
 
-        {/* แท็บที่ 3: จอคิวบาริสต้า & บาร์เบียร์สด (Barista & Taproom KDS) */}
-        {activeTab === "kds" && (
-          <div
-            className="dp-enter flex h-full w-full flex-col overflow-y-auto p-5"
-            data-testid="pos-starter-kds-view"
-          >
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 className="dp-title text-base">
-                  จอคิวบาริสต้า ชั้น 1 Cafe & คิวห้องซ้อมดนตรี ชั้น 2 In-Ear (Real-time KDS)
-                </h2>
-                <p className="dp-subtitle text-xs">
-                  แยกสีตามสถานะคิว พร้อมกดเรียกคิวลูกค้าด้วยเสียงพูดภาษาไทยและพิมพ์สติกเกอร์แปะแก้ว
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {kdsQueue.map((q, qIdx) => (
-                <div
-                  key={`${q.queueNo}-${q.docNo}`}
-                  data-testid={`pos-starter-kds-card-${q.queueNo}`}
-                  style={{ "--i": qIdx } as React.CSSProperties}
-                  className={`dp-stagger relative flex flex-col justify-between overflow-hidden rounded-2xl border p-4 pt-5 transition-all duration-500 ${
-                    q.status === "PREPARING"
-                      ? "border-[#E9BC74] bg-white shadow-[0_10px_28px_-16px_rgba(181,101,29,0.6)]"
-                      : q.status === "READY"
-                        ? "dp-glow-ready border-emerald-300 bg-gradient-to-b from-emerald-50 to-white"
-                        : "border-[#EBE0D3] bg-[#FBF7F1] opacity-70"
-                  }`}
-                >
-                  <div
-                    className={`absolute inset-x-0 top-0 h-1.5 ${
-                      q.status === "PREPARING"
-                        ? "bg-gradient-to-r from-[#E9BC74] via-[#D4823A] to-[#B5651D]"
-                        : q.status === "READY"
-                          ? "bg-gradient-to-r from-[#19B47C] to-[#0B7A53]"
-                          : "bg-[#EBE0D3]"
-                    }`}
-                  />
-                  <div>
-                    <div className="flex items-center justify-between border-b border-[#F1E8DC] pb-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="rounded-xl bg-gradient-to-br from-[#3A2416] to-[#1F130C] px-2.5 py-1 font-mono text-sm font-extrabold text-[#E9BC74] shadow-[0_4px_10px_-4px_rgba(31,19,12,0.7)]">
-                          คิว {q.queueNo}
-                        </span>
-                        <div>
-                          <div className="text-xs font-bold text-[#2A1F18]">
-                            {q.tableLabel}
-                          </div>
-                          <div className="text-[11px] text-[#A08C79]">
-                            เลขบิล {q.docNo} · เวลา {q.createdAt} น.
-                          </div>
-                        </div>
-                      </div>
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-extrabold ${
-                          q.status === "PREPARING"
-                            ? "bg-amber-100 text-amber-800 ring-1 ring-amber-200"
-                            : q.status === "READY"
-                              ? "dp-pop bg-gradient-to-r from-[#19B47C] to-[#0B7A53] text-white shadow-[0_4px_10px_-4px_rgba(15,157,107,0.8)]"
-                              : "bg-[#F5EDE2] text-[#85725F]"
-                        }`}
-                      >
-                        {q.status === "PREPARING"
-                          ? "⏳ กำลังชง/กดเบียร์"
-                          : q.status === "READY"
-                            ? "🔔 พร้อมเสิร์ฟ"
-                            : "✅ เสิร์ฟครบแล้ว"}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 space-y-2">
-                      {q.items.map((it, idx) => (
-                        <div
-                          key={idx}
-                          className="rounded-xl border border-[#F1E8DC] bg-[#FBF7F1] p-2.5"
-                        >
-                          <div className="flex items-center justify-between text-xs font-extrabold text-[#2A1F18]">
-                            <span>{it.name}</span>
-                            <span className="rounded-full bg-[#B5651D]/12 px-2 py-0.5 font-mono text-[#8F4C10]">
-                              {it.qty} {it.unitCode}
-                            </span>
-                          </div>
-                          {it.modifierText && (
-                            <div className="mt-1 text-[11px] font-semibold text-[#0B7A53]">
-                              สูตร/การเสิร์ฟ: {it.modifierText}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[#F1E8DC] pt-3">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        speak(
-                          `หมายเลขคิว ${q.queueNo} ${q.tableLabel} เครื่องดื่มและอาหารพร้อมเสิร์ฟแล้วค่ะ`,
-                        )
-                      }
-                      className="dp-btn-ghost inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-bold text-[#B5651D]"
-                    >
-                      <Volume2 className="size-3.5" />
-                      <span>เรียกคิวเสียงไทย</span>
-                    </button>
-
-                    <div className="flex items-center gap-1.5">
-                      {q.status === "PREPARING" && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setKdsQueue((prev) =>
-                              prev.map((x) =>
-                                x.queueNo === q.queueNo
-                                  ? { ...x, status: "READY" }
-                                  : x,
-                              ),
-                            );
-                            speak(`คิว ${q.queueNo} ชงเสร็จพร้อมเสิร์ฟแล้วค่ะ`);
-                          }}
-                          className="dp-btn-primary inline-flex h-9 items-center gap-1 rounded-xl px-3 text-xs font-extrabold"
-                        >
-                          <CheckCircle2 className="size-3.5" />
-                          <span>ชงเสร็จ/พร้อมเสิร์ฟ</span>
-                        </button>
-                      )}
-                      {q.status !== "SERVED" && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setKdsQueue((prev) =>
-                              prev.map((x) =>
-                                x.queueNo === q.queueNo
-                                  ? { ...x, status: "SERVED" }
-                                  : x,
-                              ),
-                            )
-                          }
-                          className="dp-btn-success inline-flex h-9 items-center gap-1 rounded-xl px-3 text-xs font-extrabold"
-                        >
-                          <CheckCircle2 className="size-3.5" />
-                          <span>เสิร์ฟครบแล้ว</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* แท็บที่ 4: รายงานยอดขาย & ปิดกะ E2E (DOME Pos Reports, Cloudflare D1/R2 & Shift Control) */}
+        {/* TAB 4: รายงานยอดขาย & ปิดกะ (Loyverse Back Office Shift & Receipts) */}
         {activeTab === "reports" && (
           <div
-            className="dp-enter flex h-full w-full flex-col space-y-4 overflow-y-auto p-5"
+            className="dp-enter flex h-full w-full flex-col space-y-4 overflow-y-auto bg-[#f5f5f5] p-4"
             data-testid="pos-starter-reports-view"
           >
-            {/* หัวข้อรายงาน + ปุ่มพิมพ์สรุปยอดกะ & ปิดกะ */}
-            <div className="dp-surface flex flex-wrap items-center justify-between gap-2 border-l-4 border-l-[#B5651D] p-4">
-              <div className="flex flex-wrap items-center gap-2">
+            {/* Shift Header Card */}
+            <div className="dp-surface flex flex-wrap items-center justify-between gap-2 border-l-4 border-l-[#2fa84f] p-4">
+              <div>
                 <h2 className="dp-title text-base">
-                  รายงานยอดขาย DOME Pos & ควบคุมกะเจ้าของร้านคนเดียว
+                  รายงานยอดขาย & การจัดการกะ (Shift Report)
                 </h2>
-                <span className="dp-subtitle text-xs">
-                  · เก็บข้อมูลบน Firebase Firestore & รูปภาพ Storage
-                </span>
+                <p className="dp-subtitle text-xs">
+                  แคชเชียร์: {shiftStatus.cashierCode} · เชื่อมต่อ Firebase Firestore ({cloudflareStatus.d1Database})
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -3044,7 +2434,7 @@ export function DomePosScreen({
                   onClick={() => {
                     if (typeof window !== "undefined") window.print();
                   }}
-                  className="dp-btn-ghost inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-bold"
+                  className="dp-btn-ghost inline-flex h-9 items-center gap-1.5 px-3 text-xs font-bold"
                 >
                   <Printer className="size-3.5" />
                   <span>พิมพ์ใบสรุปปิดกะ (Z-Report)</span>
@@ -3053,104 +2443,99 @@ export function DomePosScreen({
                   type="button"
                   data-testid="pos-starter-toggle-shift-btn"
                   onClick={() => void handleToggleShift()}
-                  className={`inline-flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-xs font-extrabold leading-none transition ${
+                  className={`inline-flex h-9 items-center gap-1.5 rounded-[6px] px-3.5 text-xs font-bold text-white transition ${
                     shiftStatus.isOpen
-                      ? "bg-gradient-to-br from-rose-500 to-rose-700 text-white shadow-[0_6px_16px_-8px_rgba(225,29,72,0.8)] hover:brightness-110"
-                      : "dp-btn-success"
+                      ? "bg-[#e53935] hover:brightness-95"
+                      : "bg-[#2fa84f] hover:bg-[#23863e]"
                   }`}
                 >
                   <Clock className="size-3.5" />
                   <span>
                     {shiftStatus.isOpen
-                      ? "ปิดกะสรุปยอดเข้า Firebase Firestore"
-                      : "เปิดกะแคชเชียร์ใหม่"}
+                      ? "ปิดกะขาย (Close Shift)"
+                      : "เปิดกะขายใหม่ (Open Shift)"}
                   </span>
                 </button>
               </div>
             </div>
 
-            {/* การ์ดสถานะการเชื่อมต่อ Firebase Firestore (Database) + Firebase Storage (Object Storage) */}
+            {/* Firebase Status Strip */}
             <div
               data-testid="pos-starter-cloudflare-status-card"
-              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-200 bg-gradient-to-r from-sky-50 via-white to-[#FFF6EA] p-4 shadow-[0_1px_2px_rgba(42,31,24,0.05),0_8px_20px_-14px_rgba(14,116,144,0.35)]"
+              className="dp-surface flex flex-wrap items-center justify-between gap-3 p-3.5 text-xs"
             >
               <div className="flex flex-wrap items-center gap-3">
-                <div className="inline-flex h-9 items-center gap-2 rounded-xl border border-sky-200 bg-white px-3 text-xs shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
-                  <Database className="size-4 shrink-0 text-sky-500" />
-                  <span className="font-extrabold text-sky-800">
-                    ฐานข้อมูล: {cloudflareStatus.d1Database} ({allMenuItems.length} เมนู · {billsHistory.length} บิล)
-                  </span>
-                </div>
-
-                <div className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#E9BC74]/70 bg-white px-3 text-xs shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
-                  <Cloud className="size-4 shrink-0 text-[#B5651D]" />
-                  <span className="font-extrabold text-[#8F4C10]">
-                    คลังรูปภาพ: {cloudflareStatus.r2Bucket} (อัปโหลดแล้ว {cloudflareStatus.r2UploadedCount} รูป)
-                  </span>
-                </div>
+                <span className="inline-flex items-center gap-1.5 font-bold text-[#212121]">
+                  <Database className="size-4 text-[#2fa84f]" />
+                  Firestore: {cloudflareStatus.d1Database} ({allMenuItems.length} เมนู · {billsHistory.length} บิล)
+                </span>
+                <span className="text-[#e0e0e0]">|</span>
+                <span className="inline-flex items-center gap-1.5 font-semibold text-[#757575]">
+                  <Cloud className="size-4 text-[#2fa84f]" />
+                  Storage: {cloudflareStatus.r2Bucket} ({cloudflareStatus.r2UploadedCount} รูป)
+                </span>
               </div>
-
               <button
                 type="button"
                 onClick={() => setShowAddMenuModal(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-gradient-to-br from-sky-400 to-sky-600 px-3.5 text-xs font-extrabold text-white shadow-[0_6px_16px_-8px_rgba(14,165,233,0.8)] transition hover:brightness-110"
+                className="dp-btn-ghost inline-flex h-8 items-center gap-1.5 px-3 text-xs font-bold text-[#23863e]"
               >
                 <ImagePlus className="size-3.5" />
-                <span>อัปโหลดรูปเมนูขึ้น Firebase Storage</span>
+                <span>เพิ่มสินค้า / อัปโหลดรูป</span>
               </button>
             </div>
 
-            {/* 4 การ์ด KPI สรุปยอดขายจริง */}
+            {/* 4 Loyverse Back Office KPI Cards */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div style={{ "--i": 0 } as React.CSSProperties} className="dp-surface dp-lift dp-stagger relative overflow-hidden p-4 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-[#E9BC74] before:to-[#B5651D]">
-                <div className="text-xs font-semibold text-[#85725F]">
-                  ยอดขายสุทธิรวมในกะ (บาท)
+              <div className="dp-surface p-4">
+                <div className="text-xs font-semibold text-[#757575]">
+                  ยอดขายสุทธิรวม (Net Sales)
                 </div>
                 <div
-                  className="dp-money mt-1 font-mono text-3xl font-extrabold tracking-tight"
+                  className="mt-1 font-mono text-2xl font-extrabold text-[#23863e]"
                   data-testid="pos-starter-kpi-total-sales"
                 >
                   {formatMoneyBlankZero(reportMetrics.totalSales) || "-"}
                 </div>
-                <div className="mt-1 text-[11px] text-[#0B7A53]">
-                  บันทึกเข้าฐานข้อมูล Firebase Firestore อัตโนมัติ
+                <div className="mt-1 text-[11px] text-[#757575]">
+                  ซิงค์ขึ้น Firebase Firestore อัตโนมัติ
                 </div>
               </div>
 
-              <div style={{ "--i": 1 } as React.CSSProperties} className="dp-surface dp-lift dp-stagger relative overflow-hidden p-4 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-[#A08C79] before:to-[#4A3B30]">
-                <div className="text-xs font-semibold text-[#85725F]">
-                  จำนวนบิลขายสำเร็จ / ยกเลิก
+              <div className="dp-surface p-4">
+                <div className="text-xs font-semibold text-[#757575]">
+                  จำนวนใบเสร็จ (Receipts)
                 </div>
                 <div
-                  className="mt-1 font-mono text-3xl font-extrabold tracking-tight text-[#2A1F18]"
+                  className="mt-1 font-mono text-2xl font-extrabold text-[#212121]"
                   data-testid="pos-starter-kpi-bill-count"
                 >
                   {reportMetrics.billCount} บิล
                 </div>
-                <div className="mt-1 text-[11px] text-[#A08C79]">
-                  ยกเลิก {reportMetrics.cancelledCount} บิล · เฉลี่ยต่อบิล{" "}
+                <div className="mt-1 text-[11px] text-[#757575]">
+                  ยกเลิก {reportMetrics.cancelledCount} บิล · เฉลี่ย{" "}
                   {formatMoneyBlankZero(reportMetrics.avgPerBill) || "-"} ฿
                 </div>
               </div>
 
-              <div style={{ "--i": 2 } as React.CSSProperties} className="dp-surface dp-lift dp-stagger relative overflow-hidden p-4 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-[#19B47C] before:to-[#0B7A53]">
-                <div className="text-xs font-semibold text-[#85725F]">
-                  ยอดเงินสดในลิ้นชัก (รวมเงินทอนตั้งต้น)
+              <div className="dp-surface p-4">
+                <div className="text-xs font-semibold text-[#757575]">
+                  เงินสดในลิ้นชัก (Expected Cash)
                 </div>
-                <div className="mt-1 font-mono text-3xl font-extrabold tracking-tight text-[#0F9D6B]">
+                <div className="mt-1 font-mono text-2xl font-extrabold text-[#212121]">
                   {formatMoneyBlankZero(reportMetrics.drawerCashTotal) || "-"}
                 </div>
-                <div className="mt-1 text-[11px] text-[#A08C79]">
+                <div className="mt-1 text-[11px] text-[#757575]">
                   เงินทอนตั้งต้น {formatMoney(shiftStatus.openingFloat, 2)} ฿ + ขายสด{" "}
                   {formatMoneyBlankZero(reportMetrics.cashSalesTotal) || "-"}
                 </div>
               </div>
 
-              <div style={{ "--i": 3 } as React.CSSProperties} className="dp-surface dp-lift dp-stagger relative overflow-hidden p-4 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-sky-400 before:to-sky-600">
-                <div className="text-xs font-semibold text-[#85725F]">
+              <div className="dp-surface p-4">
+                <div className="text-xs font-semibold text-[#757575]">
                   ยอดรับชำระ QR / โอน / บัตร
                 </div>
-                <div className="mt-1 font-mono text-3xl font-extrabold tracking-tight text-sky-600">
+                <div className="mt-1 font-mono text-2xl font-extrabold text-[#212121]">
                   {formatMoneyBlankZero(
                     addDec(
                       reportMetrics.byPayment.PROMPTPAY,
@@ -3161,27 +2546,27 @@ export function DomePosScreen({
                     ),
                   ) || "-"}
                 </div>
-                <div className="mt-1 text-[11px] text-[#A08C79]">
+                <div className="mt-1 text-[11px] text-[#757575]">
                   QR: {formatMoneyBlankZero(reportMetrics.byPayment.PROMPTPAY) || "-"} · โอน:{" "}
                   {formatMoneyBlankZero(reportMetrics.byPayment.TRANSFER) || "-"}
                 </div>
               </div>
             </div>
 
-            {/* ตารางสรุปแยกตามหมวดหมู่ & วิธีชำระเงิน */}
+            {/* Breakdown by Category & Payment Type */}
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              <div className="dp-surface dp-enter p-4">
+              <div className="dp-surface p-4">
                 <h3 className="dp-title mb-2.5 text-sm">
-                  สรุปยอดขายแยกตามหมวดหมู่ (Coffee · Non-Coffee · ห้องซ้อมดนตรี In-Ear ชั้น 2)
+                  ยอดขายแยกตามหมวดหมู่ (Sales by Category)
                 </h3>
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-[#EBE0D3] text-left text-[#85725F]">
-                      <th className="py-1.5">หมวดหมู่สินค้า</th>
-                      <th className="py-1.5 text-right">ยอดขายรวม (บาท)</th>
+                    <tr className="border-b border-[#e0e0e0] text-left text-[#757575]">
+                      <th className="py-2">หมวดหมู่</th>
+                      <th className="py-2 text-right">ยอดขาย (฿)</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#F1E8DC]">
+                  <tbody className="divide-y divide-[#f0f0f0]">
                     {(
                       [
                         "COFFEE",
@@ -3190,11 +2575,11 @@ export function DomePosScreen({
                         "ERP",
                       ] as Exclude<StarterCategory, "ALL">[]
                     ).map((cat) => (
-                      <tr key={cat} className="transition-colors hover:bg-[#FBF7F1]">
-                        <td className="py-2 font-semibold text-[#4A3B30]">
+                      <tr key={cat} className="hover:bg-[#fafafa]">
+                        <td className="py-2 font-semibold text-[#212121]">
                           {CATEGORY_META[cat].label}
                         </td>
-                        <td className="py-2 text-right font-mono font-bold text-[#8F4C10]">
+                        <td className="py-2 text-right font-mono font-bold text-[#212121]">
                           {formatMoneyBlankZero(reportMetrics.byCategory[cat]) ||
                             "-"}
                         </td>
@@ -3204,25 +2589,25 @@ export function DomePosScreen({
                 </table>
               </div>
 
-              <div className="dp-surface dp-enter p-4">
+              <div className="dp-surface p-4">
                 <h3 className="dp-title mb-2.5 text-sm">
-                  สรุปยอดรับชำระแยกตามช่องทาง (Cash / PromptPay / Transfer / Card / Wallet)
+                  ยอดขายแยกตามวิธีชำระเงิน (Sales by Payment Type)
                 </h3>
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-[#EBE0D3] text-left text-[#85725F]">
-                      <th className="py-1.5">ช่องทางรับชำระเงิน</th>
-                      <th className="py-1.5 text-right">ยอดรับสุทธิ (บาท)</th>
+                    <tr className="border-b border-[#e0e0e0] text-left text-[#757575]">
+                      <th className="py-2">ช่องทางชำระเงิน</th>
+                      <th className="py-2 text-right">ยอดรับสุทธิ (฿)</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#F1E8DC]">
+                  <tbody className="divide-y divide-[#f0f0f0]">
                     {(Object.keys(PAYMENT_LABELS) as PaymentMethodCode[]).map(
                       (pm) => (
-                        <tr key={pm} className="transition-colors hover:bg-[#FBF7F1]">
-                          <td className="py-2 font-semibold text-[#4A3B30]">
+                        <tr key={pm} className="hover:bg-[#fafafa]">
+                          <td className="py-2 font-semibold text-[#212121]">
                             {PAYMENT_LABELS[pm]}
                           </td>
-                          <td className="py-2 text-right font-mono font-bold text-[#0B7A53]">
+                          <td className="py-2 text-right font-mono font-bold text-[#23863e]">
                             {formatMoneyBlankZero(reportMetrics.byPayment[pm]) ||
                               "-"}
                           </td>
@@ -3234,11 +2619,11 @@ export function DomePosScreen({
               </div>
             </div>
 
-            {/* ตารางประวัติบิลขายหน้าร้าน (POS Bill Ledger & Reprint / Cancel Bill) */}
-            <div className="dp-surface dp-enter p-4">
+            {/* Receipts Ledger Table */}
+            <div className="dp-surface p-4">
               <div className="mb-2.5 flex items-center justify-between">
                 <h3 className="dp-title text-sm">
-                  ทะเบียนบิลขายหน้าร้าน DOME Pos ({billsHistory.length} บิล)
+                  ประวัติใบเสร็จรับเงิน ({billsHistory.length} บิล)
                 </h3>
               </div>
               <div className="overflow-x-auto">
@@ -3247,68 +2632,67 @@ export function DomePosScreen({
                   data-testid="pos-starter-bills-table"
                 >
                   <thead>
-                    <tr className="border-b border-[#EBE0D3] text-left text-[#85725F]">
-                      <th className="py-2 pr-2">เลขที่บิล</th>
+                    <tr className="border-b border-[#e0e0e0] bg-[#fafafa] text-left text-[#757575]">
+                      <th className="py-2 pl-2">เลขที่บิล</th>
                       <th className="py-2 px-2">วันที่-เวลา</th>
                       <th className="py-2 px-2">คิว / โต๊ะ</th>
                       <th className="py-2 px-2">วิธีชำระเงิน</th>
-                      <th className="py-2 px-2 text-right">ยอดสุทธิ (บาท)</th>
-                      <th className="py-2 px-2 text-center">สถานะ Firebase</th>
-                      <th className="py-2 pl-2 text-right">จัดการบิล</th>
+                      <th className="py-2 px-2 text-right">ยอดสุทธิ (฿)</th>
+                      <th className="py-2 px-2 text-center">สถานะ</th>
+                      <th className="py-2 pr-2 text-right">จัดการ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#F1E8DC]">
+                  <tbody className="divide-y divide-[#f0f0f0]">
                     {billsHistory.length === 0 ? (
                       <tr>
                         <td
                           colSpan={7}
-                          className="py-8 text-center text-[#A08C79]"
+                          className="py-8 text-center text-[#757575]"
                         >
-                          ยังไม่มีประวัติบิลในกะนี้ (ลองกดสั่งกาแฟ/เบียร์แล้วกดรับชำระเงินที่แท็บ 1)
+                          ยังไม่มีประวัติใบเสร็จในกะนี้
                         </td>
                       </tr>
                     ) : (
                       billsHistory.map((b, bIdx) => (
                         <tr
                           key={`${b.billGuid}-${b.docNo}-${bIdx}`}
-                          style={{ "--i": bIdx } as React.CSSProperties}
-                          className="dp-stagger transition-colors hover:bg-[#FBF7F1]"
+                          className="hover:bg-[#fafafa]"
                         >
-                          <td className="py-2 pr-2 font-mono font-bold text-[#2A1F18]">
+                          <td className="py-2 pl-2 font-mono font-bold text-[#212121]">
                             {b.docNo}
                           </td>
-                          <td className="py-2 px-2 whitespace-nowrap text-[#6B5848]">
+                          <td className="py-2 px-2 whitespace-nowrap text-[#757575]">
                             {formatThaiDateDisplay(b.docDate)} {b.docTime}
                           </td>
-                          <td className="py-2 px-2 text-[#4A3B30]">
-                            <span className="font-bold text-[#B5651D]">
+                          <td className="py-2 px-2 text-[#212121]">
+                            <span className="font-bold text-[#23863e]">
                               {b.queueNo}
                             </span>{" "}
                             · {b.tableLabel}
                           </td>
-                          <td className="py-2 px-2 text-[#6B5848]">
+                          <td className="py-2 px-2 text-[#757575]">
                             {PAYMENT_LABELS[b.paymentMethod]}
                           </td>
-                          <td className="py-2 px-2 text-right font-mono font-extrabold text-[#8F4C10]">
+                          <td className="py-2 px-2 text-right font-mono font-bold text-[#212121]">
                             {formatMoneyBlankZero(b.totalAmount)}
                           </td>
                           <td className="py-2 px-2 text-center">
                             {b.status === "cancelled" ? (
-                              <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700 ring-1 ring-rose-200">
+                              <span className="rounded bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-[#e53935]">
                                 ยกเลิกแล้ว
                               </span>
                             ) : (
-                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200">
-                                ปกติ (Firebase Firestore)
+                              <span className="rounded bg-[#e8f5ec] px-2 py-0.5 text-[10px] font-bold text-[#23863e]">
+                                สำเร็จ
                               </span>
                             )}
                           </td>
-                          <td className="py-2 pl-2 text-right">
+                          <td className="py-2 pr-2 text-right">
                             <div className="inline-flex items-center gap-1.5">
                               <button
                                 type="button"
                                 onClick={() => setActiveReceiptBill(b)}
-                                className="dp-btn-ghost inline-flex h-7 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold"
+                                className="dp-btn-ghost inline-flex h-7 items-center gap-1 px-2.5 text-[11px] font-semibold"
                               >
                                 <Receipt className="size-3" />
                                 <span>ใบเสร็จ</span>
@@ -3318,10 +2702,10 @@ export function DomePosScreen({
                                   type="button"
                                   data-testid={`pos-starter-cancel-${b.docNo}`}
                                   onClick={() => void handleCancelBill(b.docNo)}
-                                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-bold text-rose-700 transition hover:bg-rose-100"
+                                  className="inline-flex h-7 items-center gap-1 rounded-[4px] border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-bold text-[#e53935] hover:bg-rose-100"
                                 >
                                   <XCircle className="size-3" />
-                                  <span>ยกเลิกบิล</span>
+                                  <span>ยกเลิก</span>
                                 </button>
                               )}
                             </div>
@@ -3336,7 +2720,7 @@ export function DomePosScreen({
           </div>
         )}
 
-        {/* แท็บที่ 5: จัดการสินค้า & เชื่อมต่อบัญชี Cloudflare ของผู้ใช้ */}
+        {/* TAB 5: จัดการสินค้า & Firebase */}
         {activeTab === "manage" && (
           <DomePosManagePanel
             allMenuItems={allMenuItems}
@@ -3356,23 +2740,57 @@ export function DomePosScreen({
         )}
       </div>
 
-      {/* Modal เพิ่มเมนูใหม่ (+ อัปโหลดรูปขึ้น Cloudflare R2 & บันทึกลง Cloudflare D1) */}
+      {/* Loyverse Tap-to-Edit Ticket Line Dialog */}
+      <LineEditDialog
+        line={editingLine}
+        sweetnessOptions={SWEETNESS_OPTIONS}
+        addonOptions={ADDON_OPTIONS}
+        onClose={() => setEditingLineId(null)}
+        onAdjustQty={handleAdjustLineQty}
+        onUpdateOption={handleUpdateLineOption}
+        onRemoveLine={(lineId) => {
+          playPosSound("delete");
+          handleRemoveLine(lineId);
+        }}
+      />
+
+      {/* Loyverse Charge Screen */}
+      <ChargeScreen
+        open={chargeOpen}
+        onClose={() => setChargeOpen(false)}
+        cartNetTotal={cartNetTotal}
+        validDiscount={validDiscount}
+        paymentMethod={paymentMethod}
+        onSelectPaymentMethod={setPaymentMethod}
+        cashReceivedInput={cashReceivedInput}
+        onCashReceivedChange={(val) =>
+          setCashReceivedInput(sanitizeNumericInput(val))
+        }
+        cashChangeAmount={cashChangeAmount}
+        submittingBill={submittingBill}
+        onConfirmPay={(opts) => {
+          playPosSound("chaching");
+          void handleCheckoutAndSaveBill(opts);
+        }}
+      />
+
+      {/* Modal เพิ่มเมนูใหม่ */}
       {showAddMenuModal && (
         <div
           className="dp-backdrop fixed inset-0 z-50 flex items-center justify-center p-4"
           data-testid="pos-starter-add-menu-modal"
         >
-          <div className="dp-modal flex w-full max-w-md flex-col overflow-hidden rounded-3xl border border-[#EBE0D3] bg-white text-[#2A1F18] shadow-[0_30px_80px_-20px_rgba(31,19,12,0.6)]">
-            <div className="dp-header flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-2 text-xs font-extrabold text-[#E9BC74]">
+          <div className="dp-modal flex w-full max-w-md flex-col overflow-hidden rounded-[6px] border border-[#e0e0e0] bg-white text-[#212121] shadow-xl">
+            <div className="dp-header flex items-center justify-between px-4 py-3 text-white">
+              <div className="flex items-center gap-2 text-xs font-bold">
                 <Plus className="size-4" />
-                <span>เพิ่มเมนูใหม่ (บันทึกลง Firebase Firestore & เก็บรูป Storage)</span>
+                <span>เพิ่มสินค้าใหม่ (Firebase Firestore & Storage)</span>
               </div>
               <button
                 type="button"
                 data-testid="pos-starter-close-add-menu-btn"
                 onClick={() => setShowAddMenuModal(false)}
-                className="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-bold text-white/90 transition hover:bg-white/20"
+                className="rounded bg-white/15 px-2.5 py-1 text-xs font-bold text-white hover:bg-white/25"
               >
                 ปิด
               </button>
@@ -3381,7 +2799,7 @@ export function DomePosScreen({
             <div className="space-y-3 p-4 text-xs">
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="mb-1 block font-bold text-[#6B5848]">
+                  <label className="mb-1 block font-bold text-[#757575]">
                     รหัสเมนู
                   </label>
                   <input
@@ -3389,12 +2807,12 @@ export function DomePosScreen({
                     data-testid="pos-starter-new-item-code"
                     value={newMenuCode}
                     onChange={(e) => setNewMenuCode(e.target.value)}
-                    placeholder="เช่น DOME-01"
-                    className="dp-input h-9 w-full rounded-xl px-2.5 font-mono text-xs font-bold text-[#2A1F18]"
+                    placeholder="เช่น ECS-01"
+                    className="dp-input h-9 w-full rounded-[6px] px-2.5 font-mono text-xs font-bold text-[#212121]"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block font-bold text-[#6B5848]">
+                  <label className="mb-1 block font-bold text-[#757575]">
                     หมวดหมู่เมนู
                   </label>
                   <select
@@ -3406,7 +2824,7 @@ export function DomePosScreen({
                         e.target.value as Exclude<StarterCategory, "ALL">,
                       )
                     }
-                    className="dp-input h-9 w-full cursor-pointer rounded-xl px-2.5 text-xs font-bold text-[#2A1F18]"
+                    className="dp-input h-9 w-full cursor-pointer rounded-[6px] px-2.5 text-xs font-bold text-[#212121]"
                   >
                     <option value="COFFEE">☕ Coffee (กาแฟร้อน/เย็น)</option>
                     <option value="NON_COFFEE">🍵 Non-Coffee (ชาไทย/ชาเขียว/โกโก้)</option>
@@ -3416,7 +2834,7 @@ export function DomePosScreen({
               </div>
 
               <div>
-                <label className="mb-1 block font-bold text-[#6B5848]">
+                <label className="mb-1 block font-bold text-[#757575]">
                   ชื่อเมนูภาษาไทย
                 </label>
                 <input
@@ -3424,14 +2842,14 @@ export function DomePosScreen({
                   data-testid="pos-starter-new-item-name"
                   value={newMenuName}
                   onChange={(e) => setNewMenuName(e.target.value)}
-                  placeholder="เช่น ลาเต้เย็นเมล็ดคั่วพิเศษ / คราฟต์เบียร์สด..."
-                  className="dp-input h-9 w-full rounded-xl px-2.5 text-xs font-bold text-[#2A1F18]"
+                  placeholder="ระบุชื่อเมนู..."
+                  className="dp-input h-9 w-full rounded-[6px] px-2.5 text-xs font-bold text-[#212121]"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="mb-1 block font-bold text-[#6B5848]">
+                  <label className="mb-1 block font-bold text-[#757575]">
                     ราคาขาย (บาท)
                   </label>
                   <input
@@ -3442,12 +2860,12 @@ export function DomePosScreen({
                     onChange={(e) =>
                       setNewMenuPrice(sanitizeNumericInput(e.target.value))
                     }
-                    placeholder="85.00"
-                    className="dp-input h-9 w-full rounded-xl px-2.5 text-right font-mono text-xs font-bold text-[#8F4C10]"
+                    placeholder="50.00"
+                    className="dp-input h-9 w-full rounded-[6px] px-2.5 text-right font-mono text-xs font-bold text-[#23863e]"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block font-bold text-[#6B5848]">
+                  <label className="mb-1 block font-bold text-[#757575]">
                     หน่วยนับ
                   </label>
                   <input
@@ -3455,29 +2873,28 @@ export function DomePosScreen({
                     data-testid="pos-starter-new-item-unit"
                     value={newMenuUnit}
                     onChange={(e) => setNewMenuUnit(e.target.value)}
-                    placeholder="แก้ว / ชิ้น / จาน"
-                    className="dp-input h-9 w-full rounded-xl px-2.5 text-xs font-bold text-[#2A1F18]"
+                    placeholder="แก้ว / ชั่วโมง"
+                    className="dp-input h-9 w-full rounded-[6px] px-2.5 text-xs font-bold text-[#212121]"
                   />
                 </div>
               </div>
 
-              {/* ส่วนอัปโหลดรูปภาพเมนูขึ้น Firebase Storage */}
-              <div className="rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-3">
+              <div className="rounded-[6px] border border-[#e0e0e0] bg-[#fafafa] p-3">
                 <div className="mb-1.5 flex items-center justify-between">
-                  <span className="inline-flex items-center gap-1.5 font-bold text-sky-800">
-                    <Cloud className="size-3.5 text-sky-500" />
-                    <span>รูปภาพเมนูสินค้า (เก็บใน Firebase Storage)</span>
+                  <span className="inline-flex items-center gap-1.5 font-bold text-[#212121]">
+                    <Cloud className="size-3.5 text-[#2fa84f]" />
+                    <span>รูปภาพสินค้า (Firebase Storage)</span>
                   </span>
                   <button
                     type="button"
                     data-testid="pos-starter-r2-upload-btn"
                     onClick={() => void handleUploadImageToR2(null)}
                     disabled={uploadingR2}
-                    className="inline-flex h-7 items-center gap-1 rounded-lg bg-sky-100 px-2.5 text-[11px] font-bold text-sky-700 transition hover:bg-sky-200"
+                    className="dp-btn-ghost inline-flex h-7 items-center gap-1 px-2 text-[11px] font-bold text-[#23863e]"
                   >
                     <ImagePlus className="size-3" />
                     <span>
-                      {uploadingR2 ? "กำลังอัปโหลด Storage..." : "สร้างลิงก์รูป Storage อัตโนมัติ"}
+                      {uploadingR2 ? "กำลังอัปโหลด..." : "สร้างลิงก์รูปอัตโนมัติ"}
                     </span>
                   </button>
                 </div>
@@ -3490,12 +2907,12 @@ export function DomePosScreen({
                     const f = e.target.files?.[0];
                     if (f) void handleUploadImageToR2(f);
                   }}
-                  className="block w-full text-[11px] text-[#6B5848] file:mr-2 file:cursor-pointer file:rounded-lg file:border-0 file:bg-sky-600 file:px-2.5 file:py-1 file:text-[11px] file:font-bold file:text-white hover:file:bg-sky-500"
+                  className="block w-full text-[11px] text-[#757575] file:mr-2 file:cursor-pointer file:rounded file:border-0 file:bg-[#2fa84f] file:px-2.5 file:py-1 file:text-[11px] file:font-bold file:text-white"
                 />
                 {newMenuImageUrl && (
                   <div
                     data-testid="pos-starter-r2-upload-status"
-                    className="dp-enter mt-1.5 truncate font-mono text-[10px] text-emerald-700"
+                    className="mt-1.5 truncate font-mono text-[10px] text-[#23863e]"
                   >
                     Storage URL: {newMenuImageUrl}
                   </div>
@@ -3503,11 +2920,11 @@ export function DomePosScreen({
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 border-t border-[#F1E8DC] bg-[#FBF7F1] px-4 py-3">
+            <div className="flex items-center justify-end gap-2 border-t border-[#e0e0e0] bg-[#fafafa] px-4 py-3">
               <button
                 type="button"
                 onClick={() => setShowAddMenuModal(false)}
-                className="dp-btn-ghost inline-flex h-9 items-center rounded-xl px-3.5 text-xs font-bold"
+                className="dp-btn-ghost inline-flex h-9 items-center px-3.5 text-xs font-bold"
               >
                 ยกเลิก
               </button>
@@ -3515,60 +2932,77 @@ export function DomePosScreen({
                 type="button"
                 data-testid="pos-starter-save-menu-btn"
                 onClick={() => void handleSaveNewMenuItem()}
-                className="dp-btn-success inline-flex h-9 items-center gap-1.5 rounded-xl px-4 text-xs font-extrabold"
+                className="dp-btn-success inline-flex h-9 items-center gap-1.5 px-4 text-xs font-bold"
               >
                 <CheckCircle2 className="size-3.5" />
-                <span>บันทึกเมนูใหม่ลง Firebase</span>
+                <span>บันทึกสินค้า</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal แสดงใบเสร็จรับเงินอย่างย่อ 80mm + สติกเกอร์แปะแก้ว (Receipt & Cup Label Preview) */}
+      {/* Modal ใบเสร็จรับเงิน & หน้าจอชำระเงินสำเร็จแบบ Loyverse (แสดงเงินทอนตัวใหญ่ + ปุ่มขายรายการใหม่) */}
       {activeReceiptBill && (
         <div
           className="dp-backdrop fixed inset-0 z-50 flex items-center justify-center p-4"
           data-testid="pos-starter-receipt-modal"
         >
-          <div className="dp-modal flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-[#EBE0D3] bg-white text-slate-900 shadow-[0_30px_80px_-20px_rgba(31,19,12,0.6)]">
-            <div className="dp-header flex items-center justify-between px-4 py-3 text-white">
-              <div className="flex items-center gap-2 text-xs font-extrabold">
-                <Receipt className="size-4 text-[#E9BC74]" />
-                <span>ใบเสร็จรับเงินอย่างย่อ & ป้ายคิวบาริสต้า</span>
+          <div className="dp-modal flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-[6px] border border-[#e0e0e0] bg-white text-[#212121] shadow-2xl">
+            {/* Loyverse Sale Completed Top Banner (Total Paid & Change) */}
+            <div className="bg-[#2fa84f] px-4 py-3 text-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold">
+                  <CheckCircle2 className="size-4" />
+                  <span>ชำระเงินสำเร็จ · ใบเสร็จ {activeReceiptBill.docNo}</span>
+                </div>
+                <button
+                  type="button"
+                  data-testid="pos-starter-close-receipt-btn"
+                  onClick={() => setActiveReceiptBill(null)}
+                  className="rounded bg-white/15 px-2.5 py-1 text-xs font-bold text-white hover:bg-white/25"
+                >
+                  ปิด
+                </button>
               </div>
-              <button
-                type="button"
-                data-testid="pos-starter-close-receipt-btn"
-                onClick={() => setActiveReceiptBill(null)}
-                className="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-white/20"
-              >
-                ปิดหน้าต่าง
-              </button>
+              <div className="mt-2 grid grid-cols-2 divide-x divide-white/25 rounded bg-black/15 py-2 text-center">
+                <div>
+                  <div className="text-[10px] text-white/80">ยอดชำระสุทธิ</div>
+                  <div className="font-mono text-lg font-extrabold">
+                    ฿{formatMoney(activeReceiptBill.totalAmount, 2)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-white/80">เงินทอน</div>
+                  <div className="font-mono text-lg font-extrabold">
+                    ฿{formatMoney(activeReceiptBill.changeAmount || "0.00", 2)}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="flex-1 space-y-3 overflow-y-auto p-4 text-xs">
               <div className="text-center">
                 <img
                   src="/logo.png"
-                  alt="DOME Pos Logo"
-                  className="dp-pop mx-auto mb-1.5 size-14 rounded-full object-cover shadow-[0_6px_16px_-6px_rgba(181,101,29,0.7)] ring-2 ring-[#E9BC74]"
+                  alt="Entrance Creative Space Logo"
+                  className="mx-auto mb-1.5 size-12 rounded-full border border-[#e0e0e0] object-cover"
                 />
-                <div className="text-sm font-extrabold text-slate-900">
+                <div className="text-sm font-bold text-[#212121]">
                   Entrance Creative Space · ชั้น 1 Cafe & ชั้น 2 ห้องซ้อมดนตรี
                 </div>
-                <div className="text-[11px] text-slate-500">
+                <div className="text-[11px] text-[#757575]">
                   อิสรภาพ · ฝั่งธน · มรภ.บ้านสมเด็จเจ้าพระยา · ซ้อม In-Ear & อัดแยก Track OTG
                 </div>
-                <div className="text-[10px] text-slate-400">
+                <div className="text-[10px] text-[#757575]">
                   แผนที่ร้าน: https://maps.app.goo.gl/dSV2VeLeNssQoGwK7
                 </div>
-                <div className="mt-2 inline-block rounded-2xl border-2 border-[#2A1F18] bg-[#FBF7F1] px-4 py-1 font-mono text-lg font-extrabold">
-                  คิวรับเครื่องดื่ม: {activeReceiptBill.queueNo}
+                <div className="mt-2 inline-block rounded-[4px] border border-[#212121] bg-[#fafafa] px-4 py-1 font-mono text-base font-extrabold">
+                  คิว: {activeReceiptBill.queueNo}
                 </div>
               </div>
 
-              <div className="border-y border-dashed border-slate-300 py-2 text-[11px] text-slate-700">
+              <div className="border-y border-dashed border-[#bdbdbd] py-2 text-[11px] text-[#757575]">
                 <div className="flex justify-between">
                   <span>เลขที่บิล: {activeReceiptBill.docNo}</span>
                   <span>
@@ -3591,32 +3025,34 @@ export function DomePosScreen({
                     className="flex items-start justify-between gap-2"
                   >
                     <div>
-                      <div className="font-bold text-slate-900">
-                        {l.qty}x {l.name}
+                      <div className="font-bold text-[#212121]">
+                        {l.qty}× {l.name}
                       </div>
                       {(l.sweetness || l.addonLabel) && (
-                        <div className="text-[11px] text-slate-500">
-                          {[l.sweetness, l.addonLabel].filter(Boolean).join(" · ")}
+                        <div className="text-[11px] text-[#757575]">
+                          {[l.sweetness, l.addonLabel]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </div>
                       )}
                     </div>
-                    <span className="font-mono font-bold text-slate-900">
+                    <span className="font-mono font-bold text-[#212121]">
                       {formatMoney(mulDec(l.qty, l.unitPrice), 2)}
                     </span>
                   </div>
                 ))}
               </div>
 
-              <div className="space-y-1 border-t border-dashed border-slate-300 pt-2">
+              <div className="space-y-1 border-t border-dashed border-[#bdbdbd] pt-2">
                 {cmpDec(activeReceiptBill.discountAmount, "0") > 0 && (
-                  <div className="flex justify-between text-slate-600">
+                  <div className="flex justify-between text-[#757575]">
                     <span>ส่วนลดท้ายบิล</span>
                     <span className="font-mono">
                       -{formatMoney(activeReceiptBill.discountAmount, 2)}
                     </span>
                   </div>
                 )}
-                <div className="flex justify-between text-sm font-extrabold text-slate-900">
+                <div className="flex justify-between text-sm font-extrabold text-[#212121]">
                   <span>ยอดสุทธิรวมทั้งสิ้น (รวม VAT)</span>
                   <span className="font-mono">
                     {formatMoney(activeReceiptBill.totalAmount, 2)} บาท
@@ -3624,14 +3060,14 @@ export function DomePosScreen({
                 </div>
                 {activeReceiptBill.paymentMethod === "CASH" && (
                   <>
-                    <div className="flex justify-between text-[11px] text-slate-600">
+                    <div className="flex justify-between text-[11px] text-[#757575]">
                       <span>รับเงินสด</span>
                       <span className="font-mono">
                         {formatMoney(activeReceiptBill.cashReceived, 2)}
                       </span>
                     </div>
                     {cmpDec(activeReceiptBill.changeAmount, "0") > 0 && (
-                      <div className="flex justify-between text-[11px] font-bold text-emerald-700">
+                      <div className="flex justify-between text-[11px] font-bold text-[#23863e]">
                         <span>เงินทอน</span>
                         <span className="font-mono">
                           {formatMoney(activeReceiptBill.changeAmount, 2)}
@@ -3642,31 +3078,31 @@ export function DomePosScreen({
                 )}
               </div>
 
-              {/* กล่องแสดงผล ThaiFi Custody Wallet & แต้มสะสม On-Chain (ครบทุก 100 บาท = 1 Point เข้า Wallet ลูกค้า) */}
+              {/* Wallet Loyalty Box */}
               <div
                 data-testid="pos-starter-receipt-wallet-box"
-                className="rounded-xl border border-purple-300 bg-purple-50 p-2.5 text-[11px]"
+                className="rounded-[6px] border border-[#e0e0e0] bg-[#fafafa] p-2.5 text-[11px]"
               >
-                <div className="flex items-center justify-between font-extrabold text-purple-900">
+                <div className="flex items-center justify-between font-bold text-[#212121]">
                   <span className="inline-flex items-center gap-1">
-                    <Sparkles className="size-3.5 text-purple-600" />
-                    ThaiFi Custody Wallet (ครบ 100 ฿ = 1 Point)
+                    <Sparkles className="size-3.5 text-[#2fa84f]" />
+                    Wallet Loyalty (ครบ 100 ฿ = 1 Point)
                   </span>
                   <span
                     data-testid="pos-starter-receipt-points-minted"
-                    className="rounded-full bg-purple-700 px-2 py-0.5 font-mono text-[10px] text-white"
+                    className="rounded bg-[#2fa84f] px-2 py-0.5 font-mono text-[10px] font-bold text-white"
                   >
                     +{activeReceiptBill.walletPointsMinted || "0"} Point
                   </span>
                 </div>
-                <div className="mt-1 flex items-center justify-between text-purple-800">
+                <div className="mt-1 flex items-center justify-between text-[#757575]">
                   <span>
-                    กระเป๋าลูกค้า:{" "}
+                    กระเป๋า:{" "}
                     {activeReceiptBill.walletAddress
                       ? `${activeReceiptBill.walletAddress.slice(0, 8)}...${activeReceiptBill.walletAddress.slice(-6)}`
                       : walletSummary.custAddress}
                   </span>
-                  <span className="font-mono font-bold">
+                  <span className="font-mono font-bold text-[#212121]">
                     คงเหลือ:{" "}
                     {formatMoneyBlankZero(
                       activeReceiptBill.walletBalanceAfter ||
@@ -3678,28 +3114,28 @@ export function DomePosScreen({
                 {activeReceiptBill.walletTxHash && (
                   <div
                     data-testid="pos-starter-receipt-wallet-tx"
-                    className="mt-0.5 truncate font-mono text-[10px] text-purple-600"
+                    className="mt-0.5 truncate font-mono text-[10px] text-[#757575]"
                   >
                     TxHash: {activeReceiptBill.walletTxHash}
                   </div>
                 )}
               </div>
 
-              {/* ตัวอย่างสติกเกอร์แปะแก้ว (Cup Sticker 50x30mm) */}
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-2.5">
-                <div className="mb-1 flex items-center justify-between text-[10px] font-bold text-amber-900">
+              {/* Cup Label Preview */}
+              <div className="rounded-[6px] border border-[#e0e0e0] bg-[#fafafa] p-2.5">
+                <div className="mb-1 flex items-center justify-between text-[10px] font-bold text-[#757575]">
                   <span className="inline-flex items-center gap-1">
                     <Tag className="size-3" />
-                    สติกเกอร์แปะแก้วบาริสต้า (Cup Label 50×30mm)
+                    สติกเกอร์แปะแก้ว (50×30mm)
                   </span>
                   <span>
                     {activeReceiptBill.queueNo} · {activeReceiptBill.docTime}
                   </span>
                 </div>
-                <div className="text-xs font-extrabold text-slate-900">
+                <div className="text-xs font-bold text-[#212121]">
                   {activeReceiptBill.lines[0]?.name}
                 </div>
-                <div className="text-[11px] font-semibold text-amber-800">
+                <div className="text-[11px] text-[#757575]">
                   {[
                     activeReceiptBill.lines[0]?.sweetness || "หวานปกติ",
                     activeReceiptBill.lines[0]?.addonLabel,
@@ -3710,23 +3146,24 @@ export function DomePosScreen({
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 border-t border-[#F1E8DC] bg-[#FBF7F1] px-4 py-3">
+            <div className="flex items-center justify-between gap-2 border-t border-[#e0e0e0] bg-[#fafafa] px-4 py-3">
               <button
                 type="button"
                 onClick={() => {
                   if (typeof window !== "undefined") window.print();
                 }}
-                className="dp-btn-success inline-flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-xs font-extrabold"
+                className="dp-btn-ghost inline-flex h-10 items-center gap-1.5 px-3.5 text-xs font-bold"
               >
                 <Printer className="size-3.5" />
-                <span>พิมพ์ใบเสร็จ & สติกเกอร์แปะแก้ว</span>
+                <span>พิมพ์ใบเสร็จ</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveReceiptBill(null)}
-                className="dp-btn-ghost inline-flex h-9 items-center rounded-xl px-3.5 text-xs font-bold"
+                className="dp-btn-primary inline-flex h-10 flex-1 items-center justify-center gap-1.5 px-4 text-xs font-bold"
               >
-                เสร็จสิ้น
+                <CheckCircle2 className="size-4" />
+                <span>ขายรายการใหม่ (New Sale)</span>
               </button>
             </div>
           </div>

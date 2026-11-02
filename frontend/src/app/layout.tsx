@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { Prompt } from "next/font/google";
+import { Noto_Sans_Thai } from "next/font/google";
 import "./globals.css";
 
-const promptFont = Prompt({
+const notoSansThai = Noto_Sans_Thai({
   subsets: ["thai", "latin"],
   weight: ["400", "500", "600", "700"],
-  variable: "--font-prompt",
+  variable: "--font-noto-thai",
   display: "swap",
 });
 
@@ -122,7 +122,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th" className={promptFont.variable}>
+    <html lang="th" className={notoSansThai.variable}>
       <body className="antialiased">
         <script
           type="application/ld+json"
