@@ -1,0 +1,626 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model — DOME Pos (Solo-Owner Cafe & Craft Beer POS)
+// ===============================================================
+//
+// This security rules file enforces schema, type, and size bounds
+// for the standalone Solo-Owner DOME Pos collections while supporting
+// both immediate Solo-Owner POS terminal operation and optional
+// Firebase Authentication.
+//
+// Top-Level Collections:
+// 1. posconfig/{docId}
+//    - pos_config_number: string (required, 1..50 chars, immutable on update)
+//    - shop_name: string (required, 1..255 chars)
+//    - vat_rate: string (required, 1..30 chars, exact decimal string)
+//
+// 2. pos_id/{docId}
+//    - machinecode: string (required, 1..50 chars, immutable on update)
+//    - pos_id: string (required, 1..50 chars)
+//    - machine_name: string (optional, 1..255 chars)
+//
+// 3. erp_thai_qr_config/{docId}
+//    - pos_id: string (required, 1..50 chars, immutable on update)
+//    - merchant_name: string (optional, 0..255 chars)
+//    - promp_pay_telephone_number: string (optional, 0..30 chars)
+//
+// 4. pos_point_condition/{docId}
+//    - condition_code: string (required, 1..50 chars, immutable on update)
+//    - baht_per_point: string (optional, 1..30 chars, exact decimal string)
+//
+// 5. pos_promotions/{docId}
+//    - promo_code: string (required, 1..50 chars, immutable on update)
+//    - promo_name: string (required, 1..255 chars)
+//    - promo_type: string (optional, 1..50 chars)
+//
+// 6. coupon_list/{docId}
+//    - number: string (required, 1..60 chars, immutable on update)
+//    - amount: string (optional, 1..30 chars, exact decimal string)
+//
+// 7. pos_member_groups/{docId}
+//    - group_code: string (required, 1..50 chars, immutable on update)
+//    - group_name: string (required, 1..255 chars)
+//
+// 8. ic_inventory/{docId}
+//    - code: string (required, 1..60 chars, immutable on update)
+//    - name_1: string (required, 1..255 chars)
+//    - status: int (required, 0 or 1)
+//
+// 9. ic_inventory_barcode/{docId}
+//    - barcode: string (required, 1..64 chars, immutable on update)
+//    - ic_code: string (required, 1..60 chars)
+//    - price: string (required, 1..30 chars, exact decimal string)
+//
+// 10. pos_bill_inbox/{docId}
+//     - bill_guid: string (required, 1..100 chars, immutable on update)
+//     - doc_no: string (required, 1..60 chars, immutable on update)
+//     - status: string (required, 1..40 chars)
+//     - status_code: int (required)
+//
+// 11. ic_trans/{docId}
+//     - doc_no: string (required, 1..60 chars, immutable on update)
+//     - trans_flag: int (required)
+//     - total_amount: string (required, 1..30 chars, exact decimal string)
+//
+// 12. ic_trans_detail/{docId}
+//     - doc_no: string (required, 1..60 chars, immutable on update)
+//     - item_code: string (required, 1..60 chars)
+//
+// 13. cb_trans/{docId} & cb_trans_detail/{docId}
+//     - doc_no: string (required, 1..60 chars, immutable on update)
+//
+// 14. gl_journal/{docId} & gl_journal_detail/{docId}
+//     - doc_no: string (required, 1..60 chars, immutable on update)
+//     - debit: string (required, 1..30 chars, exact decimal string)
+//     - credit: string (required, 1..30 chars, exact decimal string)
+//
+// 15. pos_period/{docId}
+//     - period_guid: string (required, 1..100 chars, immutable on update)
+//     - machine_code: string (required, 1..50 chars)
+//     - status: int (required)
+//
+// 16. poscashiersettle/{docId}
+//     - docno: string (required, 1..60 chars, immutable on update)
+//     - total_amount: string (required, 1..30 chars, exact decimal string)
+//
+// 17. images/{docId}
+//     - guid_code: string (required, 1..100 chars)
+//     - image_id: string (required, 1..100 chars, immutable on update)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated via Firebase Auth
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // DOME Pos operates in Solo-Owner mode (immediate POS terminal access
+    // without mandatory login, or authenticated session when signed in).
+    function isPosAuthorized() {
+      return isAuthenticated() || request.auth == null;
+    }
+
+    // Verify UID hasn't been tampered with on create (if uid field is supplied)
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        (isAuthenticated() && request.resource.data.uid == request.auth.uid);
+    }
+
+    // Ensure uid field is not modified on update
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        (!('uid' in resource.data) && uidUnchanged()) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    // Validate required fields exist on the incoming document
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Enforce upper bound on number of fields in a document to prevent payload bloat
+    function withinMaxFields(maxFields) {
+      return request.resource.data.keys().size() > 0 &&
+        request.resource.data.keys().size() <= maxFields;
+    }
+
+    // Validate required non-empty string with length bounds
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    // Validate optional string (if present, must be string and within length bounds)
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+        (request.resource.data[field] is string &&
+         request.resource.data[field].size() >= minLen &&
+         request.resource.data[field].size() <= maxLen);
+    }
+
+    // Validate exact decimal string (IRON RULE 20 fixed-point text)
+    function isValidDecimalString(field) {
+      return validStringLength(field, 1, 30) &&
+        request.resource.data[field].matches('^-?\\d+(\\.\\d{1,6})?$');
+    }
+
+    // Validate optional exact decimal string
+    function isValidOptionalDecimalString(field) {
+      return !(field in request.resource.data) || isValidDecimalString(field);
+    }
+
+    // Validate integer field
+    function isValidInt(field) {
+      return request.resource.data[field] is int;
+    }
+
+    // Validate optional integer field
+    function isValidOptionalInt(field) {
+      return !(field in request.resource.data) || (request.resource.data[field] is int);
+    }
+
+    // Ensure immutable identifier fields are not modified during an update
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators (Called on BOTH create and update)
+    // ===============================================================
+
+    function isValidPosConfig() {
+      return withinMaxFields(35) &&
+        hasRequiredFields(['pos_config_number', 'shop_name', 'vat_rate']) &&
+        validStringLength('pos_config_number', 1, 50) &&
+        validStringLength('shop_name', 1, 255) &&
+        isValidDecimalString('vat_rate') &&
+        isValidOptionalString('branch_name', 0, 255) &&
+        isValidOptionalString('tax_id', 0, 30) &&
+        isValidOptionalString('pos_terminal_no', 0, 50) &&
+        isValidOptionalString('cust_code_default', 0, 50) &&
+        isValidOptionalString('pos_header', 0, 500) &&
+        isValidOptionalString('pos_footer', 0, 500) &&
+        uidUnchanged();
+    }
+
+    function isValidPosId() {
+      return withinMaxFields(35) &&
+        hasRequiredFields(['machinecode', 'pos_id']) &&
+        validStringLength('machinecode', 1, 50) &&
+        validStringLength('pos_id', 1, 50) &&
+        isValidOptionalString('machine_name', 0, 255) &&
+        isValidOptionalString('pos_config_number', 0, 50) &&
+        isValidOptionalString('branch_code', 0, 50) &&
+        isValidOptionalString('department_code', 0, 50) &&
+        isValidOptionalInt('status') &&
+        uidUnchanged();
+    }
+
+    function isValidThaiQrConfig() {
+      return withinMaxFields(20) &&
+        hasRequiredFields(['pos_id']) &&
+        validStringLength('pos_id', 1, 50) &&
+        isValidOptionalString('promp_pay_telephone_number', 0, 30) &&
+        isValidOptionalString('promp_pay_wallet_id', 0, 50) &&
+        isValidOptionalString('merchant_name', 0, 255) &&
+        isValidOptionalString('company_biller_id', 0, 50) &&
+        isValidOptionalString('company_terminal_id', 0, 50) &&
+        isValidOptionalString('company_store_id', 0, 50) &&
+        isValidOptionalInt('config_type') &&
+        uidUnchanged();
+    }
+
+    function isValidPointCondition() {
+      return withinMaxFields(25) &&
+        hasRequiredFields(['condition_code']) &&
+        validStringLength('condition_code', 1, 50) &&
+        isValidOptionalDecimalString('baht_per_point') &&
+        isValidOptionalDecimalString('points_per_baht_redeem') &&
+        isValidOptionalDecimalString('min_redeem_points') &&
+        uidUnchanged();
+    }
+
+    function isValidPromotion() {
+      return withinMaxFields(35) &&
+        hasRequiredFields(['promo_code', 'promo_name']) &&
+        validStringLength('promo_code', 1, 50) &&
+        validStringLength('promo_name', 1, 255) &&
+        isValidOptionalString('promo_type', 0, 50) &&
+        isValidOptionalString('description', 0, 1000) &&
+        isValidOptionalString('target_barcode', 0, 64) &&
+        isValidOptionalString('items_include_json', 0, 10000) &&
+        isValidOptionalInt('is_active') &&
+        uidUnchanged();
+    }
+
+    function isValidCoupon() {
+      return withinMaxFields(25) &&
+        hasRequiredFields(['number']) &&
+        validStringLength('number', 1, 60) &&
+        isValidOptionalDecimalString('amount') &&
+        isValidOptionalDecimalString('balance_amount') &&
+        isValidOptionalString('remark', 0, 500) &&
+        isValidOptionalString('cust_code', 0, 60) &&
+        isValidOptionalString('coupon_group', 0, 60) &&
+        isValidOptionalInt('last_status') &&
+        uidUnchanged();
+    }
+
+    function isValidMemberGroup() {
+      return withinMaxFields(20) &&
+        hasRequiredFields(['group_code', 'group_name']) &&
+        validStringLength('group_code', 1, 50) &&
+        validStringLength('group_name', 1, 255) &&
+        isValidOptionalString('group_type', 0, 50) &&
+        isValidOptionalString('primary_member_code', 0, 60) &&
+        isValidOptionalString('tier_level', 0, 50) &&
+        isValidOptionalDecimalString('discount_pct') &&
+        uidUnchanged();
+    }
+
+    function isValidInventory() {
+      return withinMaxFields(25) &&
+        hasRequiredFields(['code', 'name_1', 'status']) &&
+        validStringLength('code', 1, 60) &&
+        validStringLength('name_1', 1, 255) &&
+        isValidInt('status') &&
+        isValidOptionalString('name_eng_1', 0, 255) &&
+        isValidOptionalString('unit_standard', 0, 50) &&
+        isValidOptionalString('unit_cost', 0, 50) &&
+        isValidOptionalString('group_main', 0, 60) &&
+        isValidOptionalString('image_url', 0, 1024) &&
+        isValidOptionalDecimalString('balance_qty') &&
+        isValidOptionalDecimalString('average_cost') &&
+        uidUnchanged();
+    }
+
+    function isValidInventoryBarcode() {
+      return withinMaxFields(20) &&
+        hasRequiredFields(['barcode', 'ic_code', 'price']) &&
+        validStringLength('barcode', 1, 64) &&
+        validStringLength('ic_code', 1, 60) &&
+        isValidDecimalString('price') &&
+        isValidOptionalString('description', 0, 255) &&
+        isValidOptionalString('unit_code', 0, 50) &&
+        isValidOptionalDecimalString('price_2') &&
+        isValidOptionalDecimalString('price_member') &&
+        uidUnchanged();
+    }
+
+    function isValidBillInbox() {
+      return withinMaxFields(25) &&
+        hasRequiredFields(['bill_guid', 'doc_no', 'status', 'status_code']) &&
+        validStringLength('bill_guid', 1, 100) &&
+        validStringLength('doc_no', 1, 60) &&
+        validStringLength('status', 1, 40) &&
+        isValidInt('status_code') &&
+        isValidOptionalString('machine_code', 0, 50) &&
+        isValidOptionalString('payload', 0, 50000) &&
+        isValidOptionalString('error', 0, 1000) &&
+        isValidOptionalString('cancel_reason', 0, 500) &&
+        isValidOptionalString('cancelled_by', 0, 60) &&
+        uidUnchanged();
+    }
+
+    function isValidIcTrans() {
+      return withinMaxFields(40) &&
+        hasRequiredFields(['doc_no', 'trans_flag', 'total_amount']) &&
+        validStringLength('doc_no', 1, 60) &&
+        isValidInt('trans_flag') &&
+        isValidDecimalString('total_amount') &&
+        isValidOptionalString('doc_date', 0, 40) &&
+        isValidOptionalString('doc_time', 0, 20) &&
+        isValidOptionalString('cust_code', 0, 60) &&
+        isValidOptionalString('branch_code', 0, 50) &&
+        isValidOptionalString('department_code', 0, 50) &&
+        isValidOptionalString('pos_id', 0, 50) &&
+        isValidOptionalString('cashier_code', 0, 50) &&
+        isValidOptionalString('payment_method', 0, 40) &&
+        isValidOptionalString('remark', 0, 500) &&
+        uidUnchanged();
+    }
+
+    function isValidIcTransDetail() {
+      return withinMaxFields(40) &&
+        hasRequiredFields(['doc_no', 'item_code']) &&
+        validStringLength('doc_no', 1, 60) &&
+        validStringLength('item_code', 1, 60) &&
+        isValidOptionalString('item_name', 0, 255) &&
+        isValidOptionalString('barcode', 0, 64) &&
+        isValidOptionalString('unit_code', 0, 50) &&
+        isValidOptionalString('wh_code', 0, 50) &&
+        isValidOptionalString('shelf_code', 0, 50) &&
+        isValidOptionalDecimalString('qty') &&
+        isValidOptionalDecimalString('price') &&
+        isValidOptionalDecimalString('sum_amount') &&
+        uidUnchanged();
+    }
+
+    function isValidCbTrans() {
+      return withinMaxFields(35) &&
+        hasRequiredFields(['doc_no']) &&
+        validStringLength('doc_no', 1, 60) &&
+        isValidOptionalString('doc_date', 0, 40) &&
+        isValidOptionalString('doc_time', 0, 20) &&
+        isValidOptionalString('ap_ar_code', 0, 60) &&
+        isValidOptionalString('branch_code', 0, 50) &&
+        isValidOptionalString('cashier_code', 0, 50) &&
+        isValidOptionalDecimalString('total_amount') &&
+        isValidOptionalDecimalString('total_net_amount') &&
+        uidUnchanged();
+    }
+
+    function isValidCbTransDetail() {
+      return withinMaxFields(25) &&
+        hasRequiredFields(['doc_no']) &&
+        validStringLength('doc_no', 1, 60) &&
+        isValidOptionalString('doc_date', 0, 40) &&
+        isValidOptionalString('doc_time', 0, 20) &&
+        isValidOptionalString('trans_number', 0, 60) &&
+        isValidOptionalString('ap_ar_code', 0, 60) &&
+        isValidOptionalDecimalString('amount') &&
+        isValidOptionalDecimalString('sum_amount') &&
+        uidUnchanged();
+    }
+
+    function isValidGlJournal() {
+      return withinMaxFields(25) &&
+        hasRequiredFields(['doc_no', 'debit', 'credit']) &&
+        validStringLength('doc_no', 1, 60) &&
+        isValidDecimalString('debit') &&
+        isValidDecimalString('credit') &&
+        isValidOptionalString('doc_date', 0, 40) &&
+        isValidOptionalString('book_code', 0, 30) &&
+        isValidOptionalString('description', 0, 500) &&
+        isValidOptionalString('doc_format_code', 0, 30) &&
+        isValidOptionalString('branch_code', 0, 50) &&
+        uidUnchanged();
+    }
+
+    function isValidGlJournalDetail() {
+      return withinMaxFields(25) &&
+        hasRequiredFields(['doc_no', 'debit', 'credit']) &&
+        validStringLength('doc_no', 1, 60) &&
+        isValidDecimalString('debit') &&
+        isValidDecimalString('credit') &&
+        isValidOptionalString('doc_date', 0, 40) &&
+        isValidOptionalString('book_code', 0, 30) &&
+        isValidOptionalString('account_code', 0, 50) &&
+        isValidOptionalString('account_name', 0, 255) &&
+        isValidOptionalString('branch_code', 0, 50) &&
+        uidUnchanged();
+    }
+
+    function isValidPosPeriod() {
+      return withinMaxFields(25) &&
+        hasRequiredFields(['period_guid', 'machine_code', 'status']) &&
+        validStringLength('period_guid', 1, 100) &&
+        validStringLength('machine_code', 1, 50) &&
+        isValidInt('status') &&
+        isValidOptionalString('begin_date', 0, 40) &&
+        isValidOptionalString('begin_time', 0, 20) &&
+        isValidOptionalString('end_date', 0, 40) &&
+        isValidOptionalString('end_time', 0, 20) &&
+        isValidOptionalString('begin_user_code', 0, 60) &&
+        isValidOptionalString('end_user_code', 0, 60) &&
+        isValidOptionalDecimalString('float_amount') &&
+        uidUnchanged();
+    }
+
+    function isValidCashierSettle() {
+      return withinMaxFields(30) &&
+        hasRequiredFields(['docno', 'total_amount']) &&
+        validStringLength('docno', 1, 60) &&
+        isValidDecimalString('total_amount') &&
+        isValidOptionalString('docdate', 0, 40) &&
+        isValidOptionalString('doc_time', 0, 20) &&
+        isValidOptionalString('cashiercode', 0, 60) &&
+        isValidOptionalString('machinecode', 0, 50) &&
+        isValidOptionalString('pos_id', 0, 50) &&
+        isValidOptionalString('remark', 0, 500) &&
+        isValidOptionalString('branch_code', 0, 50) &&
+        uidUnchanged();
+    }
+
+    function isValidImage() {
+      return withinMaxFields(15) &&
+        hasRequiredFields(['guid_code', 'image_id']) &&
+        validStringLength('guid_code', 1, 100) &&
+        validStringLength('image_id', 1, 100) &&
+        isValidOptionalString('image_url', 0, 1024) &&
+        isValidOptionalInt('image_order') &&
+        uidUnchanged();
+    }
+
+    // ===============================================================
+    // Collection Match Rules
+    // ===============================================================
+
+    // 1. POS Startup Configuration
+    match /posconfig/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidPosConfig();
+      allow update: if isPosAuthorized() && isValidPosConfig() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['pos_config_number']);
+      allow delete: if false;
+    }
+
+    // 2. POS Terminal Devices
+    match /pos_id/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidPosId();
+      allow update: if isPosAuthorized() && isValidPosId() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['machinecode']);
+      allow delete: if false;
+    }
+
+    // 3. PromptPay QR Settings
+    match /erp_thai_qr_config/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidThaiQrConfig();
+      allow update: if isPosAuthorized() && isValidThaiQrConfig() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['pos_id']);
+      allow delete: if false;
+    }
+
+    // 4. Loyalty Point Settings
+    match /pos_point_condition/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidPointCondition();
+      allow update: if isPosAuthorized() && isValidPointCondition() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['condition_code']);
+      allow delete: if false;
+    }
+
+    // 5. Active Promotions
+    match /pos_promotions/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidPromotion();
+      allow update: if isPosAuthorized() && isValidPromotion() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['promo_code']);
+      allow delete: if isPosAuthorized();
+    }
+
+    // 6. Coupons
+    match /coupon_list/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidCoupon();
+      allow update: if isPosAuthorized() && isValidCoupon() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['number']);
+      allow delete: if isPosAuthorized();
+    }
+
+    // 7. Member Groups
+    match /pos_member_groups/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidMemberGroup();
+      allow update: if isPosAuthorized() && isValidMemberGroup() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['group_code']);
+      allow delete: if isPosAuthorized();
+    }
+
+    // 8. Menu Catalog Items
+    match /ic_inventory/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidInventory();
+      allow update: if isPosAuthorized() && isValidInventory() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['code']);
+      allow delete: if isPosAuthorized();
+    }
+
+    // 9. Item Barcode and Pricing
+    match /ic_inventory_barcode/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidInventoryBarcode();
+      allow update: if isPosAuthorized() && isValidInventoryBarcode() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['barcode']);
+      allow delete: if isPosAuthorized();
+    }
+
+    // 10. POS Sales Bills Inbox
+    match /pos_bill_inbox/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidBillInbox();
+      allow update: if isPosAuthorized() && isValidBillInbox() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['bill_guid', 'doc_no']);
+      allow delete: if false;
+    }
+
+    // 11. Inventory / Sales Transactions
+    match /ic_trans/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidIcTrans();
+      allow update: if isPosAuthorized() && isValidIcTrans() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['doc_no']);
+      allow delete: if false;
+    }
+
+    // 12. Transaction Line Items
+    match /ic_trans_detail/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidIcTransDetail();
+      allow update: if isPosAuthorized() && isValidIcTransDetail() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['doc_no', 'item_code']);
+      allow delete: if false;
+    }
+
+    // 13a. Cash / Bank Tender Records
+    match /cb_trans/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidCbTrans();
+      allow update: if isPosAuthorized() && isValidCbTrans() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['doc_no']);
+      allow delete: if false;
+    }
+
+    // 13b. Cash / Bank Tender Line Details
+    match /cb_trans_detail/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidCbTransDetail();
+      allow update: if isPosAuthorized() && isValidCbTransDetail() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['doc_no']);
+      allow delete: if false;
+    }
+
+    // 14a. Double-Entry General Ledger Headers
+    match /gl_journal/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidGlJournal();
+      allow update: if isPosAuthorized() && isValidGlJournal() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['doc_no']);
+      allow delete: if false;
+    }
+
+    // 14b. Double-Entry General Ledger Lines
+    match /gl_journal_detail/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidGlJournalDetail();
+      allow update: if isPosAuthorized() && isValidGlJournalDetail() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['doc_no']);
+      allow delete: if false;
+    }
+
+    // 15. Cashier Shift Periods
+    match /pos_period/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidPosPeriod();
+      allow update: if isPosAuthorized() && isValidPosPeriod() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['period_guid']);
+      allow delete: if false;
+    }
+
+    // 16. Shift Cash Settlements
+    match /poscashiersettle/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidCashierSettle();
+      allow update: if isPosAuthorized() && isValidCashierSettle() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['docno']);
+      allow delete: if false;
+    }
+
+    // 17. Product Image Records
+    match /images/{docId} {
+      allow read: if isPosAuthorized();
+      allow create: if isPosAuthorized() && isValidImage();
+      allow update: if isPosAuthorized() && isValidImage() &&
+        uidNotModified() && areImmutableFieldsUnchanged(['image_id']);
+      allow delete: if isPosAuthorized();
+    }
+
+    // ===============================================================
+    // Default Deny — Explicitly reject any unknown collections
+    // ===============================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

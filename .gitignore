@@ -44,3 +44,6 @@ video/render/
 video/capture.json
 # Cursor PNGs copied from the IssueMate video kit (Windows Aero look) — kept local until licensing is confirmed
 video/assets/
+
+# DomePOS local runtime state (bills/shifts) — never commit
+.domepos-firebase-state.json

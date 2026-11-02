@@ -44,10 +44,8 @@ export type ServiceChannel = "DINE_IN" | "TAKEAWAY" | "DELIVERY";
 export type StarterCategory =
   | "ALL"
   | "COFFEE"
-  | "TEA"
-  | "BEER"
-  | "BAKERY"
-  | "BITES"
+  | "NON_COFFEE"
+  | "STUDIO"
   | "ERP";
 export type PaymentMethodCode =
   | "CASH"
@@ -65,7 +63,7 @@ export interface StarterMenuItem {
   unit: string;
   price: string; // Decimal string (Rule 20)
   badge?: string;
-  imageUrl?: string; // Cloudflare R2 Image URL
+  imageUrl?: string; // Firebase Storage Image URL
   supportsSweetness?: boolean;
   supportsBeerServe?: boolean;
 }
@@ -89,7 +87,7 @@ export interface StarterCartLine {
 export interface HeldTableOrder {
   tableId: string;
   tableName: string;
-  zone: "CAFE" | "BAR" | "GARDEN";
+  zone: "CAFE_F1" | "STUDIO_F2";
   guests: number;
   openedAt: string;
   serviceChannel: ServiceChannel;
@@ -138,206 +136,195 @@ export interface StarterBillRecord {
 }
 
 const RAW_STARTER_MENU_CATALOG: StarterMenuItem[] = [
-  // ☕ กาแฟ & เอสเปรสโซ่
+  // ☕ Coffee (ชั้น 1 Cafe — 5 เมนู ร้อน/เย็น = 10 ปุ่ม)
   {
-    code: "CAFE-ESP-01",
-    barcode: "8859001001011",
-    name: "อเมริกาโน่เย็น คั่วกลาง",
-    nameEn: "Iced Medium Roast Americano",
+    code: "CF-CAP-H",
+    barcode: "8859100001011",
+    name: "Cappuccino ร้อน",
+    nameEn: "Hot Cappuccino · ชั้น 1 Cafe",
     category: "COFFEE",
     unit: "แก้ว",
-    price: "75.00",
-    badge: "ขายดี #1",
+    price: "40.00",
+    badge: "ร้อน 40฿",
     supportsSweetness: true,
   },
   {
-    code: "CAFE-ESP-02",
-    barcode: "8859001001028",
-    name: "คาเฟ่ลาเต้เย็น นมสดฮอกไกโด",
-    nameEn: "Iced Hokkaido Milk Latte",
+    code: "CF-CAP-C",
+    barcode: "8859100001012",
+    name: "Cappuccino เย็น",
+    nameEn: "Iced Cappuccino · ชั้น 1 Cafe",
     category: "COFFEE",
     unit: "แก้ว",
-    price: "85.00",
-    badge: "แนะนำ",
+    price: "50.00",
+    badge: "เย็น 50฿",
     supportsSweetness: true,
   },
   {
-    code: "CAFE-ESP-03",
-    barcode: "8859001001035",
-    name: "เดอร์ตี้คอฟฟี่ นมเย็นจัดช็อตเข้ม",
-    nameEn: "Signature Dirty Coffee",
+    code: "CF-AME-H",
+    barcode: "8859100001021",
+    name: "Americano ร้อน",
+    nameEn: "Hot Americano · ชั้น 1 Cafe",
     category: "COFFEE",
     unit: "แก้ว",
-    price: "110.00",
-    badge: "Signature",
+    price: "40.00",
+    badge: "ร้อน 40฿",
     supportsSweetness: true,
   },
   {
-    code: "CAFE-ESP-04",
-    barcode: "8859001001042",
-    name: "เอสเปรสโซ่เย็น สไตล์ไทยเข้มข้น",
-    nameEn: "Thai Style Iced Espresso",
+    code: "CF-AME-C",
+    barcode: "8859100001022",
+    name: "Americano เย็น",
+    nameEn: "Iced Americano · ชั้น 1 Cafe",
     category: "COFFEE",
     unit: "แก้ว",
-    price: "80.00",
+    price: "50.00",
+    badge: "ขายดี · เย็น 50฿",
     supportsSweetness: true,
   },
   {
-    code: "CAFE-ESP-05",
-    barcode: "8859001001059",
-    name: "คาราเมลมัคคิอาโต้เย็น",
-    nameEn: "Iced Caramel Macchiato",
+    code: "CF-LAT-H",
+    barcode: "8859100001031",
+    name: "Latte ร้อน",
+    nameEn: "Hot Latte · ชั้น 1 Cafe",
     category: "COFFEE",
     unit: "แก้ว",
-    price: "95.00",
-    supportsSweetness: true,
-  },
-  // 🍵 มัทฉะ & ชาพรีเมียม
-  {
-    code: "CAFE-TEA-01",
-    barcode: "8859001002018",
-    name: "อุจิมัทฉะลาเต้พรีเมียม",
-    nameEn: "Ceremonial Uji Matcha Latte",
-    category: "TEA",
-    unit: "แก้ว",
-    price: "115.00",
-    badge: "เกรดพิธีชงชา",
+    price: "40.00",
+    badge: "ร้อน 40฿",
     supportsSweetness: true,
   },
   {
-    code: "CAFE-TEA-02",
-    barcode: "8859001002025",
-    name: "โฮจิฉะคั่วหอมลาเต้เย็น",
-    nameEn: "Roasted Hojicha Latte",
-    category: "TEA",
+    code: "CF-LAT-C",
+    barcode: "8859100001032",
+    name: "Latte เย็น",
+    nameEn: "Iced Latte · ชั้น 1 Cafe",
+    category: "COFFEE",
     unit: "แก้ว",
-    price: "105.00",
+    price: "50.00",
+    badge: "เย็น 50฿",
     supportsSweetness: true,
   },
   {
-    code: "CAFE-TEA-03",
-    barcode: "8859001002032",
-    name: "ชาไทยครีมชีสพ่นไฟ",
-    nameEn: "Thai Tea Brûlée Cream Cheese",
-    category: "TEA",
+    code: "CF-ESP-H",
+    barcode: "8859100001041",
+    name: "Espresso ร้อน",
+    nameEn: "Hot Espresso · ชั้น 1 Cafe",
+    category: "COFFEE",
     unit: "แก้ว",
-    price: "90.00",
-    badge: "ยอดฮิต",
+    price: "40.00",
+    badge: "ร้อน 40฿",
     supportsSweetness: true,
   },
   {
-    code: "CAFE-TEA-04",
-    barcode: "8859001002049",
-    name: "ยูซุน้ำผึ้งโซดาสดชื่น",
-    nameEn: "Yuzu Honey Sparkling Soda",
-    category: "TEA",
+    code: "CF-ESP-C",
+    barcode: "8859100001042",
+    name: "Espresso เย็น",
+    nameEn: "Iced Espresso · ชั้น 1 Cafe",
+    category: "COFFEE",
     unit: "แก้ว",
-    price: "95.00",
+    price: "50.00",
+    badge: "เข้มข้น · เย็น 50฿",
     supportsSweetness: true,
   },
-  // 🍺 คราฟต์เบียร์ & ดราฟต์เบียร์
   {
-    code: "BEER-IPA-01",
-    barcode: "8859001003015",
-    name: "คราฟต์เบียร์ Hazy IPA สด (Pint 473ml)",
-    nameEn: "Tropical Hazy IPA Draft Pint",
-    category: "BEER",
+    code: "CF-MOC-H",
+    barcode: "8859100001051",
+    name: "Mocca ร้อน",
+    nameEn: "Hot Mocha · ชั้น 1 Cafe",
+    category: "COFFEE",
     unit: "แก้ว",
-    price: "220.00",
-    badge: "Tap #1 · ABV 6.2%",
+    price: "50.00",
+    badge: "ร้อน 50฿",
+    supportsSweetness: true,
+  },
+  {
+    code: "CF-MOC-C",
+    barcode: "8859100001052",
+    name: "Mocca เย็น",
+    nameEn: "Iced Mocha · ชั้น 1 Cafe",
+    category: "COFFEE",
+    unit: "แก้ว",
+    price: "60.00",
+    badge: "เย็น 60฿",
+    supportsSweetness: true,
+  },
+  // 🍵 Non-Coffee (ชั้น 1 Cafe — 3 เมนู ร้อน/เย็น = 6 ปุ่ม)
+  {
+    code: "NC-THA-H",
+    barcode: "8859100002011",
+    name: "ชาไทย ร้อน",
+    nameEn: "Hot Thai Tea · ชั้น 1 Cafe",
+    category: "NON_COFFEE",
+    unit: "แก้ว",
+    price: "40.00",
+    badge: "ร้อน 40฿",
+    supportsSweetness: true,
+  },
+  {
+    code: "NC-THA-C",
+    barcode: "8859100002012",
+    name: "ชาไทย เย็น",
+    nameEn: "Iced Thai Tea · ชั้น 1 Cafe",
+    category: "NON_COFFEE",
+    unit: "แก้ว",
+    price: "50.00",
+    badge: "ยอดฮิต · เย็น 50฿",
+    supportsSweetness: true,
+  },
+  {
+    code: "NC-GRN-H",
+    barcode: "8859100002021",
+    name: "ชาเขียว ร้อน",
+    nameEn: "Hot Green Tea · ชั้น 1 Cafe",
+    category: "NON_COFFEE",
+    unit: "แก้ว",
+    price: "40.00",
+    badge: "ร้อน 40฿",
+    supportsSweetness: true,
+  },
+  {
+    code: "NC-GRN-C",
+    barcode: "8859100002022",
+    name: "ชาเขียว เย็น",
+    nameEn: "Iced Green Tea · ชั้น 1 Cafe",
+    category: "NON_COFFEE",
+    unit: "แก้ว",
+    price: "50.00",
+    badge: "เย็น 50฿",
+    supportsSweetness: true,
+  },
+  {
+    code: "NC-COC-H",
+    barcode: "8859100002031",
+    name: "โกโก้ ร้อน",
+    nameEn: "Hot Cocoa · ชั้น 1 Cafe",
+    category: "NON_COFFEE",
+    unit: "แก้ว",
+    price: "40.00",
+    badge: "ร้อน 40฿",
+    supportsSweetness: true,
+  },
+  {
+    code: "NC-COC-C",
+    barcode: "8859100002032",
+    name: "โกโก้ เย็น",
+    nameEn: "Iced Cocoa · ชั้น 1 Cafe",
+    category: "NON_COFFEE",
+    unit: "แก้ว",
+    price: "50.00",
+    badge: "เข้มข้น · เย็น 50฿",
+    supportsSweetness: true,
+  },
+  // 🎧 ห้องซ้อมดนตรี (ชั้น 2 — In-Ear Monitor Only · 250 บาท/ชม.)
+  {
+    code: "ST-ROOM-01",
+    barcode: "8859100003011",
+    name: "ห้องซ้อมดนตรี In-Ear Monitor (ชั้น 2)",
+    nameEn: "In-Ear Only · หูฟังครบ · Digital Mixer แยก Track · อัดเสียง/คลิป OTG",
+    category: "STUDIO",
+    unit: "ชั่วโมง",
+    price: "250.00",
+    badge: "250฿/ชม. · In-Ear",
     supportsBeerServe: true,
-  },
-  {
-    code: "BEER-WZN-01",
-    barcode: "8859001003022",
-    name: "ไวเซ่นเบียร์สดข้าวสาลีเยอรมัน (Pint)",
-    nameEn: "Bavarian Wheat Weizen Draft Pint",
-    category: "BEER",
-    unit: "แก้ว",
-    price: "190.00",
-    badge: "Tap #2 · นุ่มหอมกล้วย",
-    supportsBeerServe: true,
-  },
-  {
-    code: "BEER-PIL-01",
-    barcode: "8859001003039",
-    name: "พิลสเนอร์คราฟต์เบียร์สด (Pint)",
-    nameEn: "Crisp Bohemian Pilsner Pint",
-    category: "BEER",
-    unit: "แก้ว",
-    price: "170.00",
-    badge: "Tap #3 · ดื่มง่าย",
-    supportsBeerServe: true,
-  },
-  {
-    code: "BEER-TWR-01",
-    barcode: "8859001003046",
-    name: "ทาวเวอร์เบียร์สดคราฟต์ 3 ลิตร",
-    nameEn: "Craft Draft Beer Tower 3L",
-    category: "BEER",
-    unit: "ทาวเวอร์",
-    price: "890.00",
-    badge: "คุ้มยกแก๊ง",
-    supportsBeerServe: true,
-  },
-  // 🥐 เบเกอรี่ & ครัวซองต์
-  {
-    code: "CAFE-BAK-01",
-    barcode: "8859001004012",
-    name: "ครัวซองต์เนยสดฝรั่งเศส AOP",
-    nameEn: "French AOP Butter Croissant",
-    category: "BAKERY",
-    unit: "ชิ้น",
-    price: "85.00",
-    badge: "อบสดใหม่",
-  },
-  {
-    code: "CAFE-BAK-02",
-    barcode: "8859001004029",
-    name: "ชีสเค้กหน้าไหม้บาสก์โฮมเมด",
-    nameEn: "Basque Burnt Cheesecake",
-    category: "BAKERY",
-    unit: "ชิ้น",
-    price: "135.00",
-  },
-  {
-    code: "CAFE-BAK-03",
-    barcode: "8859001004036",
-    name: "เพนโอช็อกโกแลตดาร์ก 70%",
-    nameEn: "Dark Chocolate Pain au Chocolat",
-    category: "BAKERY",
-    unit: "ชิ้น",
-    price: "95.00",
-  },
-  // 🍟 กับแกล้ม & จานด่วนคาเฟ่
-  {
-    code: "BITE-SNK-01",
-    barcode: "8859001005019",
-    name: "เฟรนช์ฟรายส์ทรัฟเฟิลพาเมซานชีส",
-    nameEn: "Truffle Parmesan Fries",
-    category: "BITES",
-    unit: "จาน",
-    price: "140.00",
-    badge: "คู่เบียร์ขายดี",
-  },
-  {
-    code: "BITE-SNK-02",
-    barcode: "8859001005026",
-    name: "ปีกไก่ทอดน้ำปลาพริกแห้งกรอบ",
-    nameEn: "Crispy Fish Sauce Chicken Wings",
-    category: "BITES",
-    unit: "จาน",
-    price: "165.00",
-  },
-  {
-    code: "BITE-SNK-03",
-    barcode: "8859001005033",
-    name: "ไส้กรอกเยอรมันรวมย่างเตาถ่าน",
-    nameEn: "Grilled German Sausage Platter",
-    category: "BITES",
-    unit: "จาน",
-    price: "240.00",
-    badge: "ซิกเนเจอร์บาร์",
   },
 ];
 
@@ -357,32 +344,25 @@ const SWEETNESS_OPTIONS = [
 ];
 
 const ADDON_OPTIONS = [
-  { id: "NONE", label: "มาตรฐาน (ไม่เพิ่มท็อปปิ้ง)", price: "0.00" },
-  { id: "EXTRA_SHOT", label: "+1 ช็อตเอสเปรสโซ่เข้ม (+20฿)", price: "20.00" },
-  { id: "OAT_MILK", label: "เปลี่ยนเป็นนมโอ๊ต Oat Milk (+25฿)", price: "25.00" },
-  { id: "CHEESE_FOAM", label: "ท็อปครีมชีสพ่นไฟ (+20฿)", price: "20.00" },
-  { id: "FROSTED_GLASS", label: "แก้วแช่เย็นจัด Frosted (-4°C)", price: "0.00" },
+  { id: "NONE", label: "มาตรฐาน (ไม่เพิ่มออปชัน)", price: "0.00" },
+  { id: "EXTRA_SHOT", label: "+1 ช็อตเอสเปรสโซ่เข้ม (+10฿)", price: "10.00" },
+  { id: "SEPARATE_ICE", label: "แยกน้ำแข็ง (สำหรับนักศึกษาหิ้วไปเรียน)", price: "0.00" },
+  { id: "STUDIO_OTG", label: "In-Ear ครบทุกเครื่อง + อัดแยก Track & คลิปผ่าน OTG (ฟรี)", price: "0.00" },
 ];
 
 const INITIAL_TABLES: {
   tableId: string;
   tableName: string;
-  zone: "CAFE" | "BAR" | "GARDEN";
+  zone: "CAFE_F1" | "STUDIO_F2";
   zoneLabel: string;
   seats: number;
 }[] = [
-  { tableId: "C1", tableName: "โต๊ะคาเฟ่ C1 (ริมกระจก)", zone: "CAFE", zoneLabel: "โซนคาเฟ่แอร์", seats: 2 },
-  { tableId: "C2", tableName: "โต๊ะคาเฟ่ C2 (บาร์ปลั๊กไฟ)", zone: "CAFE", zoneLabel: "โซนคาเฟ่แอร์", seats: 4 },
-  { tableId: "C3", tableName: "โต๊ะคาเฟ่ C3 (โซฟาใหญ่)", zone: "CAFE", zoneLabel: "โซนคาเฟ่แอร์", seats: 6 },
-  { tableId: "C4", tableName: "โต๊ะคาเฟ่ C4 (มุมหนังสือ)", zone: "CAFE", zoneLabel: "โซนคาเฟ่แอร์", seats: 2 },
-  { tableId: "B1", tableName: "บาร์คราฟต์เบียร์ B1 (หน้าแท็ป)", zone: "BAR", zoneLabel: "เคาน์เตอร์บาร์เบียร์", seats: 2 },
-  { tableId: "B2", tableName: "บาร์คราฟต์เบียร์ B2 (กลางบาร์)", zone: "BAR", zoneLabel: "เคาน์เตอร์บาร์เบียร์", seats: 2 },
-  { tableId: "B3", tableName: "โต๊ะสูงบาร์เบียร์ B3", zone: "BAR", zoneLabel: "เคาน์เตอร์บาร์เบียร์", seats: 4 },
-  { tableId: "B4", tableName: "โต๊ะสูงบาร์เบียร์ B4", zone: "BAR", zoneLabel: "เคาน์เตอร์บาร์เบียร์", seats: 4 },
-  { tableId: "G1", tableName: "ซุ้มสวนลานเบียร์ G1", zone: "GARDEN", zoneLabel: "โซนสวน & ลานเบียร์", seats: 6 },
-  { tableId: "G2", tableName: "ซุ้มสวนลานเบียร์ G2", zone: "GARDEN", zoneLabel: "โซนสวน & ลานเบียร์", seats: 6 },
-  { tableId: "G3", tableName: "ระเบียงดนตรีสด G3", zone: "GARDEN", zoneLabel: "โซนสวน & ลานเบียร์", seats: 8 },
-  { tableId: "G4", tableName: "ระเบียงดนตรีสด G4", zone: "GARDEN", zoneLabel: "โซนสวน & ลานเบียร์", seats: 4 },
+  { tableId: "C1", tableName: "โต๊ะคาเฟ่ C1 (ชั้น 1 · ริมกระจก)", zone: "CAFE_F1", zoneLabel: "ชั้น 1 · โซน Cafe", seats: 2 },
+  { tableId: "C2", tableName: "โต๊ะคาเฟ่ C2 (ชั้น 1 · บาร์ปลั๊กไฟอ่านหนังสือ)", zone: "CAFE_F1", zoneLabel: "ชั้น 1 · โซน Cafe", seats: 4 },
+  { tableId: "C3", tableName: "โต๊ะคาเฟ่ C3 (ชั้น 1 · โต๊ะติวกลุ่ม BSRU)", zone: "CAFE_F1", zoneLabel: "ชั้น 1 · โซน Cafe", seats: 6 },
+  { tableId: "C4", tableName: "โต๊ะคาเฟ่ C4 (ชั้น 1 · มุมโซฟา Creative Space)", zone: "CAFE_F1", zoneLabel: "ชั้น 1 · โซน Cafe", seats: 4 },
+  { tableId: "S1", tableName: "ห้องซ้อมดนตรี S1 (ชั้น 2 · In-Ear Monitor & OTG)", zone: "STUDIO_F2", zoneLabel: "ชั้น 2 · ห้องซ้อมดนตรี", seats: 6 },
+  { tableId: "S2", tableName: "โซนพักนักดนตรี S2 (ชั้น 2 · หน้าห้องซ้อม)", zone: "STUDIO_F2", zoneLabel: "ชั้น 2 · ห้องซ้อมดนตรี", seats: 4 },
 ];
 
 const CATEGORY_META: Record<
@@ -390,12 +370,10 @@ const CATEGORY_META: Record<
   { label: string; colorClass: string }
 > = {
   ALL: { label: "ทั้งหมด", colorClass: "bg-amber-500 text-slate-950" },
-  COFFEE: { label: "☕ กาแฟสด", colorClass: "bg-amber-700 text-white" },
-  TEA: { label: "🍵 มัทฉะ & ชา", colorClass: "bg-emerald-600 text-white" },
-  BEER: { label: "🍺 คราฟต์เบียร์", colorClass: "bg-yellow-500 text-slate-950" },
-  BAKERY: { label: "🥐 เบเกอรี่", colorClass: "bg-orange-600 text-white" },
-  BITES: { label: "🍟 กับแกล้ม", colorClass: "bg-rose-600 text-white" },
-  ERP: { label: "📦 เมนูเพิ่มเอง/D1", colorClass: "bg-sky-600 text-white" },
+  COFFEE: { label: "☕ Coffee (40-60฿)", colorClass: "bg-amber-700 text-white" },
+  NON_COFFEE: { label: "🍵 Non-Coffee (40-50฿)", colorClass: "bg-emerald-600 text-white" },
+  STUDIO: { label: "🎧 ห้องซ้อมดนตรี ชั้น 2 (250฿/ชม.)", colorClass: "bg-indigo-600 text-white" },
+  ERP: { label: "📦 เมนูเพิ่มเอง/Firebase", colorClass: "bg-sky-600 text-white" },
 };
 
 const PAYMENT_LABELS: Record<PaymentMethodCode, string> = {
@@ -518,116 +496,116 @@ export function DomePosScreen({
   const [cartLines, setCartLines] = useState<StarterCartLine[]>([
     {
       lineId: "init-1",
-      itemCode: "CAFE-ESP-03",
-      barcode: "8859001001035",
-      name: "เดอร์ตี้คอฟฟี่ นมเย็นจัดช็อตเข้ม",
+      itemCode: "CF-AME-C",
+      barcode: "8859100001022",
+      name: "Americano เย็น",
       category: "COFFEE",
       unitCode: "แก้ว",
       qty: "1",
-      basePrice: "110.00",
+      basePrice: "50.00",
       addonPrice: "0.00",
-      unitPrice: "110.00",
+      unitPrice: "50.00",
       sweetness: "หวาน 50%",
       addonLabel: "",
       note: "",
     },
     {
       lineId: "init-2",
-      itemCode: "CAFE-BAK-01",
-      barcode: "8859001004012",
-      name: "ครัวซองต์เนยสดฝรั่งเศส AOP",
-      category: "BAKERY",
-      unitCode: "ชิ้น",
+      itemCode: "NC-THA-C",
+      barcode: "8859100002012",
+      name: "ชาไทย เย็น",
+      category: "NON_COFFEE",
+      unitCode: "แก้ว",
       qty: "1",
-      basePrice: "85.00",
+      basePrice: "50.00",
       addonPrice: "0.00",
-      unitPrice: "85.00",
-      sweetness: "",
+      unitPrice: "50.00",
+      sweetness: "หวาน 50%",
       addonLabel: "",
-      note: "อุ่นร้อน",
+      note: "",
     },
   ]);
 
-  // โต๊ะที่เปิดบิลค้างไว้ (Held Bar / Cafe Tabs)
+  // โต๊ะชั้น 1 Cafe & ห้องซ้อมดนตรีชั้น 2 ที่เปิดบิลค้างไว้
   const [heldTables, setHeldTables] = useState<Record<string, HeldTableOrder>>({
-    B1: {
-      tableId: "B1",
-      tableName: "บาร์คราฟต์เบียร์ B1 (หน้าแท็ป)",
-      zone: "BAR",
-      guests: 2,
-      openedAt: "18:45",
+    S1: {
+      tableId: "S1",
+      tableName: "ห้องซ้อมดนตรี S1 (ชั้น 2 · In-Ear Monitor & OTG)",
+      zone: "STUDIO_F2",
+      guests: 5,
+      openedAt: "16:00",
       serviceChannel: "DINE_IN",
       discountAmount: "0.00",
-      remark: "ขอแก้วแช่เย็นจัด",
+      remark: "วงนักศึกษา มรภ.บ้านสมเด็จฯ · ซ้อม In-Ear + อัดเสียงแยก Track ผ่าน OTG",
       lines: [
         {
-          lineId: "held-b1-1",
-          itemCode: "BEER-IPA-01",
-          barcode: "8859001003015",
-          name: "คราฟต์เบียร์ Hazy IPA สด (Pint 473ml)",
-          category: "BEER",
-          unitCode: "แก้ว",
+          lineId: "held-s1-1",
+          itemCode: "ST-ROOM-01",
+          barcode: "8859100003011",
+          name: "ห้องซ้อมดนตรี In-Ear Monitor (ชั้น 2)",
+          category: "STUDIO",
+          unitCode: "ชั่วโมง",
           qty: "2",
-          basePrice: "220.00",
+          basePrice: "250.00",
           addonPrice: "0.00",
-          unitPrice: "220.00",
+          unitPrice: "250.00",
           sweetness: "",
-          addonLabel: "แก้วแช่เย็นจัด Frosted (-4°C)",
+          addonLabel: "In-Ear ครบทุกเครื่อง + อัดแยก Track & คลิปผ่าน OTG (ฟรี)",
           note: "",
         },
         {
-          lineId: "held-b1-2",
-          itemCode: "BITE-SNK-01",
-          barcode: "8859001005019",
-          name: "เฟรนช์ฟรายส์ทรัฟเฟิลพาเมซานชีส",
-          category: "BITES",
-          unitCode: "จาน",
-          qty: "1",
-          basePrice: "140.00",
+          lineId: "held-s1-2",
+          itemCode: "CF-LAT-C",
+          barcode: "8859100001032",
+          name: "Latte เย็น",
+          category: "COFFEE",
+          unitCode: "แก้ว",
+          qty: "2",
+          basePrice: "50.00",
           addonPrice: "0.00",
-          unitPrice: "140.00",
-          sweetness: "",
+          unitPrice: "50.00",
+          sweetness: "หวาน 50%",
           addonLabel: "",
-          note: "",
+          note: "เสิร์ฟขึ้นห้องซ้อมชั้น 2",
         },
       ],
     },
   });
 
-  // คิวบาริสต้า & บาร์น้ำ (Barista & Taproom KDS)
+  // คิวบาริสต้าชั้น 1 & คิวห้องซ้อมดนตรีชั้น 2 (Entrance Creative Space KDS)
   const [kdsQueue, setKdsQueue] = useState<KdsQueueOrder[]>([
     {
       queueNo: "A-001",
-      docNo: "CAFE-6910-0001",
-      tableLabel: "บาร์คราฟต์เบียร์ B1",
+      docNo: "ECS-6911-0001",
+      tableLabel: "ห้องซ้อมดนตรี S1 (ชั้น 2 · In-Ear Monitor)",
       serviceChannel: "DINE_IN",
-      createdAt: "18:45",
+      createdAt: "16:00",
       status: "PREPARING",
       items: [
         {
-          name: "คราฟต์เบียร์ Hazy IPA สด (Pint 473ml)",
+          name: "ห้องซ้อมดนตรี In-Ear Monitor (ชั้น 2)",
           qty: "2",
-          unitCode: "แก้ว",
-          modifierText: "แก้วแช่เย็นจัด Frosted (-4°C)",
-          category: "BEER",
+          unitCode: "ชั่วโมง",
+          modifierText: "หูฟังครบทุกเครื่อง · Mixer Digital แยก Track · อัดเสียง & คลิป OTG",
+          category: "STUDIO",
         },
         {
-          name: "เฟรนช์ฟรายส์ทรัฟเฟิลพาเมซานชีส",
-          qty: "1",
-          unitCode: "จาน",
-          modifierText: "เสิร์ฟร้อน",
-          category: "BITES",
+          name: "Latte เย็น",
+          qty: "2",
+          unitCode: "แก้ว",
+          modifierText: "หวาน 50% · เสิร์ฟขึ้นชั้น 2",
+          category: "COFFEE",
         },
       ],
     },
   ]);
 
-  // สินค้าที่ซิงค์มาจากฐานข้อมูล Cloudflare D1 (/api/pos/sync) + เมนูที่เจ้าของร้านเพิ่มเอง
+  // สินค้าที่ซิงค์มาจากฐานข้อมูล Firebase Firestore (/api/pos/sync) + เมนูที่เจ้าของร้านเพิ่มเอง
   const [erpSyncedItems, setErpSyncedItems] = useState<StarterMenuItem[]>([]);
   const [customMenuItems, setCustomMenuItems] = useState<StarterMenuItem[]>([]);
   const [syncLoading, setSyncLoading] = useState<boolean>(false);
 
-  // สถานะการเชื่อมต่อ Cloudflare D1 (Database) + Cloudflare R2 (Image Storage) แบบ Realtime
+  // สถานะการเชื่อมต่อ Firebase Firestore (Database) + Firebase Storage (Image Storage) แบบ Realtime
   const [cloudflareStatus, setCloudflareStatus] = useState<{
     d1Connected: boolean;
     r2Connected: boolean;
@@ -641,9 +619,9 @@ export function DomePosScreen({
   }>({
     d1Connected: true,
     r2Connected: true,
-    d1Database: "Cloudflare D1 (domepos-db)",
-    r2Bucket: "Cloudflare R2 (domepos-media)",
-    r2UploadedCount: 19,
+    d1Database: "Firebase Firestore (entrace-pos)",
+    r2Bucket: "Firebase Storage (entrace-pos.firebasestorage.app)",
+    r2UploadedCount: 17,
     lastR2Url: "",
     realtimeConnected: true,
     latencyMs: 3,
@@ -662,13 +640,13 @@ export function DomePosScreen({
   const [autoSyncCountdown, setAutoSyncCountdown] = useState<number>(30);
   const [autoSyncCycleCount, setAutoSyncCycleCount] = useState<number>(1);
 
-  // Modal เพิ่มเมนูใหม่สำหรับเจ้าของร้านทำคนเดียว (+ อัปโหลดรูปขึ้น Cloudflare R2)
+  // Modal เพิ่มเมนูใหม่สำหรับเจ้าของร้านทำคนเดียว (+ อัปโหลดรูปขึ้น Firebase Storage)
   const [showAddMenuModal, setShowAddMenuModal] = useState<boolean>(false);
-  const [newMenuCode, setNewMenuCode] = useState<string>("DOME-01");
+  const [newMenuCode, setNewMenuCode] = useState<string>("ECS-01");
   const [newMenuName, setNewMenuName] = useState<string>("");
   const [newMenuCategory, setNewMenuCategory] =
     useState<Exclude<StarterCategory, "ALL">>("COFFEE");
-  const [newMenuPrice, setNewMenuPrice] = useState<string>("85.00");
+  const [newMenuPrice, setNewMenuPrice] = useState<string>("50.00");
   const [newMenuUnit, setNewMenuUnit] = useState<string>("แก้ว");
   const [newMenuImageUrl, setNewMenuImageUrl] = useState<string>("");
   const [uploadingR2, setUploadingR2] = useState<boolean>(false);
@@ -757,21 +735,21 @@ export function DomePosScreen({
               const rawCat = String(r.category || "").toUpperCase();
               const validCat: Exclude<StarterCategory, "ALL"> =
                 rawCat === "COFFEE" ||
-                rawCat === "TEA" ||
-                rawCat === "BEER" ||
-                rawCat === "BAKERY" ||
-                rawCat === "BITES"
+                rawCat === "NON_COFFEE" ||
+                rawCat === "STUDIO"
                   ? rawCat
-                  : "ERP";
+                  : rawCat === "TEA"
+                    ? "NON_COFFEE"
+                    : "ERP";
               loaded.push({
                 code,
                 barcode: String(r.barcode || code),
                 name: String(r.name || code),
-                nameEn: String(r.category || "Cloudflare D1 Menu"),
+                nameEn: String(r.category || "Firebase Firestore Menu"),
                 category: validCat,
                 unit: String(r.unit_code || "แก้ว"),
                 price: formatMoney(price, 2).replace(/,/g, ""),
-                badge: "D1 Sync",
+                badge: "Firebase Sync",
                 imageUrl:
                   r.image_url &&
                   !String(r.image_url).includes(
@@ -779,8 +757,9 @@ export function DomePosScreen({
                   )
                     ? String(r.image_url)
                     : `/api/pos/image?code=${encodeURIComponent(code)}`,
-                supportsSweetness: validCat === "COFFEE" || validCat === "TEA",
-                supportsBeerServe: validCat === "BEER",
+                supportsSweetness:
+                  validCat === "COFFEE" || validCat === "NON_COFFEE",
+                supportsBeerServe: validCat === "STUDIO",
               });
               if (loaded.length >= 48 + STARTER_MENU_CATALOG.length) break;
             }
@@ -809,15 +788,11 @@ export function DomePosScreen({
                 itemCode: String(ln.item_code || ""),
                 barcode: String(ln.barcode || ln.item_code || ""),
                 name: String(ln.name || ln.item_code || ""),
-                category: String(ln.item_code || "").startsWith("BEER-")
-                  ? "BEER"
-                  : String(ln.item_code || "").startsWith("CAFE-TEA")
-                    ? "TEA"
-                    : String(ln.item_code || "").startsWith("CAFE-BAK")
-                      ? "BAKERY"
-                      : String(ln.item_code || "").startsWith("BITE-")
-                        ? "BITES"
-                        : "COFFEE",
+                category: String(ln.item_code || "").startsWith("ST-")
+                  ? "STUDIO"
+                  : String(ln.item_code || "").startsWith("NC-")
+                    ? "NON_COFFEE"
+                    : "COFFEE",
                 unitCode: String(ln.unit_code || "แก้ว"),
                 qty: String(ln.qty || "1"),
                 basePrice: String(ln.price || "0.00"),
@@ -933,14 +908,14 @@ export function DomePosScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // เชื่อมต่อ Cloudflare D1 & R2 แบบ Realtime ผ่าน Server-Sent Events (SSE /api/pos/cloudflare/stream?mode=sse)
+  // เชื่อมต่อ Firebase Firestore & Storage แบบ Realtime ผ่าน Server-Sent Events (SSE /api/pos/firebase/stream?mode=sse)
   useEffect(() => {
     if (typeof window === "undefined" || typeof EventSource === "undefined") {
       return;
     }
     let es: EventSource | null = null;
     try {
-      es = new EventSource("/api/pos/cloudflare/stream?mode=sse");
+      es = new EventSource("/api/pos/firebase/stream?mode=sse");
       es.onmessage = (evt) => {
         try {
           const parsed = JSON.parse(evt.data);
@@ -963,7 +938,7 @@ export function DomePosScreen({
                 id: String(r.id || makeUuid()),
                 type: String(r.type || "sync"),
                 timestamp: String(r.timestamp || evTime),
-                message: String(r.message || "Cloudflare Realtime Sync"),
+                message: String(r.message || "Firebase Realtime Sync"),
                 latencyMs: Number(r.latency_ms ?? 3),
               })),
             );
@@ -974,7 +949,7 @@ export function DomePosScreen({
                   id: String(parsed.id || makeUuid()),
                   type: String(parsed.type),
                   timestamp: evTime,
-                  message: String(parsed.message || "Cloudflare Realtime Event"),
+                  message: String(parsed.message || "Firebase Realtime Event"),
                   latencyMs: lat > 0 ? lat : 2,
                 },
                 ...prev.filter((x) => x.id !== parsed.id),
@@ -985,6 +960,7 @@ export function DomePosScreen({
             parsed.type === "item_upserted" ||
             parsed.type === "bill_created" ||
             parsed.type === "bill_cancelled" ||
+            parsed.type === "firebase_connected" ||
             parsed.type === "cloudflare_connected"
           ) {
             void syncFromErpBackend();
@@ -1010,7 +986,7 @@ export function DomePosScreen({
   const handleTriggerRealtimeSync = useCallback(
     async (isAuto = false) => {
       try {
-        const res = await fetch("/api/pos/cloudflare/stream", {
+        const res = await fetch("/api/pos/firebase/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1027,7 +1003,7 @@ export function DomePosScreen({
               type: "success",
               text:
                 j?.event?.message ||
-                "ซิงค์ข้อมูล Cloudflare D1 & R2 แบบ Realtime สำเร็จ",
+                "ซิงค์ข้อมูล Firebase Firestore & Storage แบบ Realtime สำเร็จ",
             });
           }
         }
@@ -1321,14 +1297,14 @@ export function DomePosScreen({
       }));
       setStatusBanner({
         type: "info",
-        text: `อัปโหลดรูปภาพเมนูขึ้น Cloudflare R2 เรียบร้อยแล้ว (${r2Url})`,
+        text: `อัปโหลดรูปภาพเมนูขึ้น Firebase Storage เรียบร้อยแล้ว (${r2Url})`,
       });
     } finally {
       setUploadingR2(false);
     }
   };
 
-  // บันทึกเมนูใหม่สำหรับเจ้าของร้านทำคนเดียว -> เพิ่มเข้าหน้าจอทันที + POST /api/pos/shift (action: "upsert_item") ลง Cloudflare D1
+  // บันทึกเมนูใหม่สำหรับเจ้าของร้านทำคนเดียว -> เพิ่มเข้าหน้าจอทันที + POST /api/pos/shift (action: "upsert_item") ลง Firebase Firestore
   const handleSaveNewMenuItem = async () => {
     const code = (newMenuCode.trim() || `DOME-${customMenuItems.length + 1}`).toUpperCase();
     const name = newMenuName.trim();
@@ -1354,15 +1330,15 @@ export function DomePosScreen({
       code,
       barcode: code,
       name,
-      nameEn: `${newMenuCategory} · Cloudflare D1/R2`,
+      nameEn: `${newMenuCategory} · Firebase Firestore/Storage`,
       category: newMenuCategory,
       unit,
       price: formattedPrice,
-      badge: "เมนูใหม่ D1/R2",
+      badge: "เมนูใหม่ Firebase",
       imageUrl: finalImageUrl,
       supportsSweetness:
-        newMenuCategory === "COFFEE" || newMenuCategory === "TEA",
-      supportsBeerServe: newMenuCategory === "BEER",
+        newMenuCategory === "COFFEE" || newMenuCategory === "NON_COFFEE",
+      supportsBeerServe: newMenuCategory === "STUDIO",
     };
 
     setCustomMenuItems((prev) => [
@@ -1396,13 +1372,13 @@ export function DomePosScreen({
       lastR2Url: finalImageUrl,
     }));
     setShowAddMenuModal(false);
-    setNewMenuCode(`DOME-${String(customMenuItems.length + 2).padStart(2, "0")}`);
+    setNewMenuCode(`ECS-${String(customMenuItems.length + 2).padStart(2, "0")}`);
     setNewMenuName("");
-    setNewMenuPrice("85.00");
+    setNewMenuPrice("50.00");
     setNewMenuImageUrl("");
     setStatusBanner({
       type: "success",
-      text: `เพิ่มเมนูใหม่ "${name}" (${code}) ราคา ${formatMoney(formattedPrice, 2)} บาท ลงฐานข้อมูล Cloudflare D1 และเก็บรูปใน Cloudflare R2 เรียบร้อยแล้ว`,
+      text: `เพิ่มเมนูใหม่ "${name}" (${code}) ราคา ${formatMoney(formattedPrice, 2)} บาท ลงฐานข้อมูล Firebase Firestore และเก็บรูปใน Firebase Storage เรียบร้อยแล้ว`,
     });
   };
 
@@ -1752,7 +1728,7 @@ export function DomePosScreen({
     const netFormatted = formatMoney(cartNetTotal, 2);
     setStatusBanner({
       type: "success",
-      text: `บันทึกบิล ${docNo} (${qNo}) ยอดสุทธิ ${netFormatted} บาท เรียบร้อยแล้ว${syncedErp ? " · บันทึกลงฐานข้อมูล Cloudflare D1 สำเร็จ" : ""}`,
+      text: `บันทึกบิล ${docNo} (${qNo}) ยอดสุทธิ ${netFormatted} บาท เรียบร้อยแล้ว${syncedErp ? " · บันทึกลงฐานข้อมูล Firebase Firestore สำเร็จ" : ""}`,
     });
     speak(
       `รับชำระเงินเรียบร้อย ยอดสุทธิ ${netFormatted} บาท หมายเลขคิว ${qNo} ค่ะ`,
@@ -1793,7 +1769,7 @@ export function DomePosScreen({
     }
     setStatusBanner({
       type: "info",
-      text: `ยกเลิกบิลเลขที่ ${docNo} ในฐานข้อมูล Cloudflare D1 เรียบร้อยแล้ว`,
+      text: `ยกเลิกบิลเลขที่ ${docNo} ในฐานข้อมูล Firebase Firestore เรียบร้อยแล้ว`,
     });
   };
 
@@ -1831,7 +1807,7 @@ export function DomePosScreen({
       type: "success",
       text: nextOpen
         ? `เปิดกะแคชเชียร์ (${shiftStatus.cashierCode}) เวลา ${nowTime} น. พร้อมขายแล้ว`
-        : `ปิดกะแคชเชียร์และบันทึกสรุปยอดลง Cloudflare D1 เรียบร้อยแล้ว`,
+        : `ปิดกะแคชเชียร์และบันทึกสรุปยอดลง Firebase Firestore เรียบร้อยแล้ว`,
     });
   };
 
@@ -1855,10 +1831,8 @@ export function DomePosScreen({
     };
     const byCategory: Record<Exclude<StarterCategory, "ALL">, string> = {
       COFFEE: "0.00",
-      TEA: "0.00",
-      BEER: "0.00",
-      BAKERY: "0.00",
-      BITES: "0.00",
+      NON_COFFEE: "0.00",
+      STUDIO: "0.00",
       ERP: "0.00",
     };
 
@@ -1908,13 +1882,15 @@ export function DomePosScreen({
           >
             <img
               src="/logo.png"
-              alt="DOME Pos Logo"
+              alt="Entrance Creative Space Logo"
               data-testid="dome-pos-logo"
               className="size-7 shrink-0 rounded-full object-cover ring-2 ring-[#E9BC74]/80 shadow-[0_0_14px_rgba(233,188,116,0.45)]"
             />
-            <span className="bg-gradient-to-r from-white to-[#F4D9AE] bg-clip-text text-sm tracking-wide text-transparent">DOME Pos</span>
+            <span className="bg-gradient-to-r from-white to-[#F4D9AE] bg-clip-text text-sm tracking-wide text-transparent">
+              Entrance Creative Space
+            </span>
             <span className="hidden text-[11px] font-medium text-[#E9BC74]/90 sm:inline">
-              · สาขาสำนักงานใหญ่ (POS-01 · โหมดเจ้าของร้านคนเดียว)
+              · ชั้น 1 Cafe & ชั้น 2 ห้องซ้อมดนตรี In-Ear (อิสรภาพ · มรภ.บ้านสมเด็จฯ)
             </span>
           </span>
 
@@ -1941,7 +1917,7 @@ export function DomePosScreen({
               }`}
             >
               <Store className="size-3.5 shrink-0" />
-              <span>2. ผังโต๊ะ & บาร์</span>
+              <span>2. ผังโต๊ะ Cafe & ห้องซ้อมชั้น 2</span>
               {occupiedTableCount > 0 && (
                 <span key={occupiedTableCount} className="dp-pop inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-gradient-to-b from-rose-500 to-rose-700 px-1 text-[10px] font-extrabold text-white shadow-[0_2px_6px_rgba(225,29,72,0.5)]">
                   {occupiedTableCount}
@@ -1987,26 +1963,26 @@ export function DomePosScreen({
               }`}
             >
               <Cloud className="size-3.5 shrink-0" />
-              <span>5. จัดการสินค้า & Cloudflare</span>
+              <span>5. จัดการสินค้า & Firebase</span>
             </button>
           </div>
         </div>
 
-        {/* สถานะ Cloudflare D1 + R2, สถานะกะแคชเชียร์ & ปุ่มซิงค์สินค้า */}
+        {/* สถานะ Firebase Firestore + Storage, สถานะกะแคชเชียร์ & ปุ่มซิงค์สินค้า */}
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             data-testid="pos-starter-cloudflare-badge"
             onClick={() => setActiveTab("manage")}
             className="dp-glass inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-white transition hover:bg-white/15"
-            title="เชื่อมต่อฐานข้อมูล Cloudflare D1 และเก็บรูปภาพทั้งหมดบน Cloudflare R2 แบบ Realtime"
+            title="เชื่อมต่อฐานข้อมูล Firebase Firestore และเก็บรูปภาพทั้งหมดบน Firebase Storage แบบ Realtime"
           >
             <span className="dp-live size-2 rounded-full bg-emerald-400" />
             <Database className="size-3.5 shrink-0 text-[#E9BC74]" />
-            <span>Cloudflare Realtime</span>
+            <span>Firebase Realtime</span>
             <span className="text-white/50">·</span>
             <Cloud className="size-3.5 shrink-0 text-sky-200" />
-            <span>D1/R2 ({cloudflareStatus.latencyMs}ms)</span>
+            <span>Firestore/Storage ({cloudflareStatus.latencyMs}ms)</span>
           </button>
 
           <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-300/30 bg-emerald-500/15 px-2.5 text-xs font-bold text-emerald-50 backdrop-blur">
@@ -2158,7 +2134,7 @@ export function DomePosScreen({
                   className="dp-btn-success inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-xs font-extrabold leading-none"
                 >
                   <Plus className="size-3.5 shrink-0" />
-                  <span>+ เพิ่มเมนูใหม่ (D1/R2)</span>
+                  <span>+ เพิ่มเมนูใหม่ (Firebase)</span>
                 </button>
               </div>
 
@@ -2175,10 +2151,10 @@ export function DomePosScreen({
                   const hasInCart = cmpDec(qtyInCart, "0") > 0;
                   const imgSrc = item.imageUrl || `/products/${item.code}.jpg`;
                   const isPrimaryOptionHost =
-                    item.code === "CAFE-ESP-01" ||
+                    item.code === "CF-AME-C" ||
                     (idx === 0 &&
                       !filteredMenuItems.some(
-                        (m) => m.code === "CAFE-ESP-01",
+                        (m) => m.code === "CF-AME-C",
                       ));
 
                   return (
@@ -2381,8 +2357,8 @@ export function DomePosScreen({
                     const lineImg = `/products/${line.itemCode}.jpg`;
                     const isDrinkOrBeer =
                       line.category === "COFFEE" ||
-                      line.category === "TEA" ||
-                      line.category === "BEER";
+                      line.category === "NON_COFFEE" ||
+                      line.category === "STUDIO";
 
                     return (
                       <div
@@ -2487,7 +2463,7 @@ export function DomePosScreen({
                             onClick={(e) => e.stopPropagation()}
                           >
                             {(line.category === "COFFEE" ||
-                              line.category === "TEA") && (
+                              line.category === "NON_COFFEE") && (
                               <div className="mb-1.5 flex flex-wrap items-center gap-1">
                                 <span className="font-bold text-[#8F4C10]">
                                   ความหวาน:
@@ -2705,7 +2681,7 @@ export function DomePosScreen({
                             : "ชำระเงิน & พิมพ์ใบเสร็จ (F9)"}
                         </div>
                         <div className="text-[10px] text-emerald-50/85">
-                          รวม VAT 7% · บันทึกลง Cloudflare D1
+                          รวม VAT 7% · บันทึกลง Firebase Firestore
                         </div>
                       </div>
                     </div>
@@ -2768,7 +2744,7 @@ export function DomePosScreen({
                     className="dp-btn-ghost inline-flex h-9 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-bold"
                   >
                     <Cloud className="size-3.5 shrink-0 text-[#B5651D]" />
-                    <span>จัดการสินค้า/Cloudflare</span>
+                    <span>จัดการสินค้า/Firebase</span>
                   </button>
                 </div>
               </div>
@@ -2785,10 +2761,10 @@ export function DomePosScreen({
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="dp-title text-base">
-                  ผังโต๊ะคาเฟ่ · เคาน์เตอร์บาร์คราฟต์เบียร์ · ลานเบียร์ในสวน
+                  ผังโซน Entrance Creative Space · ชั้น 1 Cafe & ชั้น 2 ห้องซ้อมดนตรี In-Ear
                 </h2>
                 <p className="dp-subtitle text-xs">
-                  คลิกที่โต๊ะเพื่อดึงรายการกลับมาสั่งเพิ่ม หรือกดเช็คบิลออกใบเสร็จรับเงินทันที
+                  คลิกที่โต๊ะหรือห้องซ้อมเพื่อดึงรายการกลับมาสั่งเพิ่ม หรือกดเช็คบิลออกใบเสร็จรับเงินทันที
                 </p>
               </div>
               <div className="flex items-center gap-3 text-xs font-bold">
@@ -2900,7 +2876,7 @@ export function DomePosScreen({
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="dp-title text-base">
-                  จอคิวบาริสต้าชงกาแฟ & บาร์เทนเดอร์กดคราฟต์เบียร์สด (Real-time KDS)
+                  จอคิวบาริสต้า ชั้น 1 Cafe & คิวห้องซ้อมดนตรี ชั้น 2 In-Ear (Real-time KDS)
                 </h2>
                 <p className="dp-subtitle text-xs">
                   แยกสีตามสถานะคิว พร้อมกดเรียกคิวลูกค้าด้วยเสียงพูดภาษาไทยและพิมพ์สติกเกอร์แปะแก้ว
@@ -3058,7 +3034,7 @@ export function DomePosScreen({
                   รายงานยอดขาย DOME Pos & ควบคุมกะเจ้าของร้านคนเดียว
                 </h2>
                 <span className="dp-subtitle text-xs">
-                  · เก็บข้อมูลบน Cloudflare D1 & รูปภาพ R2
+                  · เก็บข้อมูลบน Firebase Firestore & รูปภาพ Storage
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -3086,14 +3062,14 @@ export function DomePosScreen({
                   <Clock className="size-3.5" />
                   <span>
                     {shiftStatus.isOpen
-                      ? "ปิดกะสรุปยอดเข้า Cloudflare D1"
+                      ? "ปิดกะสรุปยอดเข้า Firebase Firestore"
                       : "เปิดกะแคชเชียร์ใหม่"}
                   </span>
                 </button>
               </div>
             </div>
 
-            {/* การ์ดสถานะการเชื่อมต่อ Cloudflare D1 (Database) + Cloudflare R2 (Object Storage) */}
+            {/* การ์ดสถานะการเชื่อมต่อ Firebase Firestore (Database) + Firebase Storage (Object Storage) */}
             <div
               data-testid="pos-starter-cloudflare-status-card"
               className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-200 bg-gradient-to-r from-sky-50 via-white to-[#FFF6EA] p-4 shadow-[0_1px_2px_rgba(42,31,24,0.05),0_8px_20px_-14px_rgba(14,116,144,0.35)]"
@@ -3120,7 +3096,7 @@ export function DomePosScreen({
                 className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-gradient-to-br from-sky-400 to-sky-600 px-3.5 text-xs font-extrabold text-white shadow-[0_6px_16px_-8px_rgba(14,165,233,0.8)] transition hover:brightness-110"
               >
                 <ImagePlus className="size-3.5" />
-                <span>อัปโหลดรูปเมนูขึ้น Cloudflare R2</span>
+                <span>อัปโหลดรูปเมนูขึ้น Firebase Storage</span>
               </button>
             </div>
 
@@ -3137,7 +3113,7 @@ export function DomePosScreen({
                   {formatMoneyBlankZero(reportMetrics.totalSales) || "-"}
                 </div>
                 <div className="mt-1 text-[11px] text-[#0B7A53]">
-                  บันทึกเข้าฐานข้อมูล Cloudflare D1 อัตโนมัติ
+                  บันทึกเข้าฐานข้อมูล Firebase Firestore อัตโนมัติ
                 </div>
               </div>
 
@@ -3196,7 +3172,7 @@ export function DomePosScreen({
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               <div className="dp-surface dp-enter p-4">
                 <h3 className="dp-title mb-2.5 text-sm">
-                  สรุปยอดขายแยกตามหมวดหมู่ (กาแฟ · ชา · คราฟต์เบียร์ · เบเกอรี่ · กับแกล้ม)
+                  สรุปยอดขายแยกตามหมวดหมู่ (Coffee · Non-Coffee · ห้องซ้อมดนตรี In-Ear ชั้น 2)
                 </h3>
                 <table className="w-full text-xs">
                   <thead>
@@ -3209,10 +3185,8 @@ export function DomePosScreen({
                     {(
                       [
                         "COFFEE",
-                        "TEA",
-                        "BEER",
-                        "BAKERY",
-                        "BITES",
+                        "NON_COFFEE",
+                        "STUDIO",
                         "ERP",
                       ] as Exclude<StarterCategory, "ALL">[]
                     ).map((cat) => (
@@ -3279,7 +3253,7 @@ export function DomePosScreen({
                       <th className="py-2 px-2">คิว / โต๊ะ</th>
                       <th className="py-2 px-2">วิธีชำระเงิน</th>
                       <th className="py-2 px-2 text-right">ยอดสุทธิ (บาท)</th>
-                      <th className="py-2 px-2 text-center">สถานะ D1</th>
+                      <th className="py-2 px-2 text-center">สถานะ Firebase</th>
                       <th className="py-2 pl-2 text-right">จัดการบิล</th>
                     </tr>
                   </thead>
@@ -3325,7 +3299,7 @@ export function DomePosScreen({
                               </span>
                             ) : (
                               <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200">
-                                ปกติ (Cloudflare D1)
+                                ปกติ (Firebase Firestore)
                               </span>
                             )}
                           </td>
@@ -3392,7 +3366,7 @@ export function DomePosScreen({
             <div className="dp-header flex items-center justify-between px-4 py-3">
               <div className="flex items-center gap-2 text-xs font-extrabold text-[#E9BC74]">
                 <Plus className="size-4" />
-                <span>เพิ่มเมนูใหม่ (บันทึกลง Cloudflare D1 & เก็บรูป R2)</span>
+                <span>เพิ่มเมนูใหม่ (บันทึกลง Firebase Firestore & เก็บรูป Storage)</span>
               </div>
               <button
                 type="button"
@@ -3434,11 +3408,9 @@ export function DomePosScreen({
                     }
                     className="dp-input h-9 w-full cursor-pointer rounded-xl px-2.5 text-xs font-bold text-[#2A1F18]"
                   >
-                    <option value="COFFEE">☕ กาแฟสด</option>
-                    <option value="TEA">🍵 มัทฉะ & ชา</option>
-                    <option value="BEER">🍺 คราฟต์เบียร์</option>
-                    <option value="BAKERY">🥐 เบเกอรี่</option>
-                    <option value="BITES">🍟 กับแกล้ม / ของทานเล่น</option>
+                    <option value="COFFEE">☕ Coffee (กาแฟร้อน/เย็น)</option>
+                    <option value="NON_COFFEE">🍵 Non-Coffee (ชาไทย/ชาเขียว/โกโก้)</option>
+                    <option value="STUDIO">🎧 ห้องซ้อมดนตรี ชั้น 2 (In-Ear Monitor)</option>
                   </select>
                 </div>
               </div>
@@ -3489,12 +3461,12 @@ export function DomePosScreen({
                 </div>
               </div>
 
-              {/* ส่วนอัปโหลดรูปภาพเมนูขึ้น Cloudflare R2 */}
+              {/* ส่วนอัปโหลดรูปภาพเมนูขึ้น Firebase Storage */}
               <div className="rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-3">
                 <div className="mb-1.5 flex items-center justify-between">
                   <span className="inline-flex items-center gap-1.5 font-bold text-sky-800">
                     <Cloud className="size-3.5 text-sky-500" />
-                    <span>รูปภาพเมนูสินค้า (เก็บใน Cloudflare R2)</span>
+                    <span>รูปภาพเมนูสินค้า (เก็บใน Firebase Storage)</span>
                   </span>
                   <button
                     type="button"
@@ -3505,14 +3477,14 @@ export function DomePosScreen({
                   >
                     <ImagePlus className="size-3" />
                     <span>
-                      {uploadingR2 ? "กำลังอัปโหลด R2..." : "สร้างลิงก์รูป R2 อัตโนมัติ"}
+                      {uploadingR2 ? "กำลังอัปโหลด Storage..." : "สร้างลิงก์รูป Storage อัตโนมัติ"}
                     </span>
                   </button>
                 </div>
                 <input
                   type="file"
                   accept="image/*"
-                  aria-label="อัปโหลดไฟล์รูปภาพขึ้น Cloudflare R2"
+                  aria-label="อัปโหลดไฟล์รูปภาพขึ้น Firebase Storage"
                   data-testid="pos-starter-new-item-image-input"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
@@ -3525,7 +3497,7 @@ export function DomePosScreen({
                     data-testid="pos-starter-r2-upload-status"
                     className="dp-enter mt-1.5 truncate font-mono text-[10px] text-emerald-700"
                   >
-                    R2 URL: {newMenuImageUrl}
+                    Storage URL: {newMenuImageUrl}
                   </div>
                 )}
               </div>
@@ -3546,7 +3518,7 @@ export function DomePosScreen({
                 className="dp-btn-success inline-flex h-9 items-center gap-1.5 rounded-xl px-4 text-xs font-extrabold"
               >
                 <CheckCircle2 className="size-3.5" />
-                <span>บันทึกเมนูใหม่ลง D1/R2</span>
+                <span>บันทึกเมนูใหม่ลง Firebase</span>
               </button>
             </div>
           </div>
@@ -3583,10 +3555,13 @@ export function DomePosScreen({
                   className="dp-pop mx-auto mb-1.5 size-14 rounded-full object-cover shadow-[0_6px_16px_-6px_rgba(181,101,29,0.7)] ring-2 ring-[#E9BC74]"
                 />
                 <div className="text-sm font-extrabold text-slate-900">
-                  DOME Pos · ร้านกาแฟ เบียร์ คาเฟ่ย์
+                  Entrance Creative Space · ชั้น 1 Cafe & ชั้น 2 ห้องซ้อมดนตรี
                 </div>
                 <div className="text-[11px] text-slate-500">
-                  ใบเสร็จรับเงิน / ใบกำกับภาษีอย่างย่อ (ABB) · Cloudflare D1/R2
+                  อิสรภาพ · ฝั่งธน · มรภ.บ้านสมเด็จเจ้าพระยา · ซ้อม In-Ear & อัดแยก Track OTG
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  แผนที่ร้าน: https://maps.app.goo.gl/dSV2VeLeNssQoGwK7
                 </div>
                 <div className="mt-2 inline-block rounded-2xl border-2 border-[#2A1F18] bg-[#FBF7F1] px-4 py-1 font-mono text-lg font-extrabold">
                   คิวรับเครื่องดื่ม: {activeReceiptBill.queueNo}
