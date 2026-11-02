@@ -225,27 +225,15 @@
   }
 }
 
-/* ---------------- Lightweight transitions ---------------- */
-.dp-enter {
-  animation: dpFadeIn 0.15s ease-out backwards;
-}
-.dp-stagger {
-  animation: none;
-}
-.dp-slide-in {
-  animation: dpFadeIn 0.12s ease-out backwards;
-}
-.dp-pop {
-  animation: dpFadeIn 0.12s ease-out backwards;
-}
-.dp-bump {
-  animation: none;
-}
-.dp-banner {
-  animation: dpFadeIn 0.15s ease-out backwards;
-}
+/* ---------------- Instant flat transitions (Loyverse POS speed) ---------------- */
+.dp-enter,
+.dp-stagger,
+.dp-slide-in,
+.dp-pop,
+.dp-bump,
+.dp-banner,
 .dp-expand {
-  animation: dpFadeIn 0.12s ease-out backwards;
+  animation: none;
 }
 .dp-plus-one {
   animation: dpPlusOne 0.45s ease-out forwards;
